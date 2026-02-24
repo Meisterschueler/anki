@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Downloaded data (regenerate via scripts/01_download_data.py)
+data/
+
+# Generated output (regenerate via scripts/02-04)
+output/
+
+# Temporary / scratch files
+_test_*.png
+_inspect_apkg.py
+_poi_coords.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
