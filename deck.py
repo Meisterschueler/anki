@@ -163,7 +163,7 @@ class Region:
 class Classification:
     """A mountain group classification system (AVE 84, SOIUSA, etc.)."""
 
-    name: str                   # "ave84" / "soiusa"
+    name: str                   # "ave84" / "soiusa_sz"
     title: str                  # Human-readable, e.g. "AVE 84"
 
     # ── Groups & classification ──────────────────────────────────────────────
@@ -418,13 +418,13 @@ class POIDeck:
 # Known regions and their default classification
 REGION_DEFAULTS: Dict[str, str] = {
     "ostalpen":  "ave84",
-    "westalpen": "soiusa",
+    "westalpen": "soiusa_sz",
 }
 
 # Valid (region, system) pairs
 VALID_COMBINATIONS: Dict[str, List[str]] = {
     "ostalpen":  ["ave84", "pois"],
-    "westalpen": ["soiusa", "soiusa_sts"],
+    "westalpen": ["soiusa_sz", "soiusa_sts"],
 }
 
 # Subdeck merge: when building the first system, both are packed into one
@@ -433,7 +433,7 @@ VALID_COMBINATIONS: Dict[str, List[str]] = {
 # Format:  "region_primary_system" -> [(system, subdeck_label), ...]
 SUBDECK_MERGE: Dict[str, List[Tuple[str, str]]] = {
     "westalpen_soiusa": [
-        ("soiusa",     "A Gliederung"),
+        ("soiusa_sz",  "A Gliederung"),
         ("soiusa_sts", "B Details"),
     ],
 }
@@ -457,11 +457,11 @@ def _get_classification(region_name: str, system_name: str) -> Classification:
     if key == ("ostalpen", "ave84"):
         from classifications.ave84 import CLASSIFICATION
         return CLASSIFICATION
-    elif key == ("westalpen", "soiusa"):
-        from classifications.soiusa import CLASSIFICATION
+    elif key == ("westalpen", "soiusa_sz"):
+        from classifications.westalpen_soiusa_sz import CLASSIFICATION
         return CLASSIFICATION
     elif key == ("westalpen", "soiusa_sts"):
-        from classifications.soiusa_sts import CLASSIFICATION
+        from classifications.westalpen_soiusa_sts import CLASSIFICATION
         return CLASSIFICATION
     elif key == ("ostalpen", "pois"):
         return None  # POI decks use _get_poi_classification instead
@@ -491,11 +491,23 @@ def _get_poi_classification(region_name: str, system_name: str) -> POIClassifica
 _POI_SYSTEMS = {"pois"}
 
 
+def _merge_key_for(region_name: str, system_name: str) -> Optional[str]:
+    """Return the SUBDECK_MERGE key if this system is part of a merge, else None."""
+    for key, entries in SUBDECK_MERGE.items():
+        if key.startswith(f"{region_name}_"):
+            if any(s == system_name for s, _ in entries):
+                return key
+    return None
+
+
 def _make_deck(region_name: str, system_name: str):
     """Construct a Deck or POIDeck from a region + classification pair."""
     region = _get_region(region_name)
     combo_name = f"{region_name}_{system_name}"
-    output_dir = PROJECT_ROOT / "output" / combo_name
+
+    # Merged systems share a single output directory
+    merge_key = _merge_key_for(region_name, system_name)
+    output_dir = PROJECT_ROOT / "output" / (merge_key or combo_name)
 
     if system_name in _POI_SYSTEMS:
         poi_cls = _get_poi_classification(region_name, system_name)
@@ -504,7 +516,7 @@ def _make_deck(region_name: str, system_name: str):
             poi_classification=poi_cls,
             output_images_dir=output_dir / "images",
             output_csv_dir=output_dir,
-            anki_csv_name=f"anki_{combo_name}",
+            anki_csv_name=f"anki_{merge_key or combo_name}",
         )
 
     classification = _get_classification(region_name, system_name)
@@ -514,7 +526,7 @@ def _make_deck(region_name: str, system_name: str):
         osm_geojson=DATA_DIR_OSM / f"{combo_name}.geojson",
         output_images_dir=output_dir / "images",
         output_csv_dir=output_dir,
-        anki_csv_name=f"anki_{combo_name}",
+        anki_csv_name=f"anki_{merge_key or combo_name}",
     )
 
 
@@ -553,10 +565,11 @@ def add_deck_arguments(parser) -> None:
         default="ostalpen",
         help="Which region to process (default: ostalpen)",
     )
+    valid_systems = sorted({s for ss in VALID_COMBINATIONS.values() for s in ss})
     parser.add_argument(
         "--system",
+        choices=valid_systems,
         default=None,
-        help="Classification system (default: region-dependent). "
-             "e.g. ave84, soiusa",
+        help="Classification system (default: region-dependent)",
     )
 

@@ -30,7 +30,7 @@ Alle verwendeten Geodaten mit exakten Quellen, Lizenzen und Abrufmethoden.
 | **Format** | GeoJSON (konvertiert aus uMap JSON) |
 | **Lizenz** | Nicht explizit angegeben; abgeleitet von OSM-basierten Geodaten |
 | **Script** | `scripts/download_soiusa_umap.py` |
-| **Ausgabedatei** | `data/osm/westalpen_soiusa.geojson` |
+| **Ausgabedatei** | `data/osm/westalpen_soiusa_sz.geojson` |
 
 ### SOIUSA (alle Ebenen) — ARPA Piemonte
 

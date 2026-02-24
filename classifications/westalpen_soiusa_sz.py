@@ -1,6 +1,6 @@
 """
-Classification: SOIUSA (Westalpen — Sezioni)
-==============================================
+Classification: SOIUSA SZ (Westalpen — Sezioni)
+=================================================
 All 14 Sezioni (sections) of the Western Alps according to the
 Suddivisione Orografica Internazionale Unificata del Sistema Alpino
 (SOIUSA, Sergio Marazzi, 2005).
@@ -55,8 +55,8 @@ GROUPS: List[Gebirgsgruppe] = [
 # ─── Colors ───────────────────────────────────────────────────────────────────
 
 CLASSIFICATION = Classification(
-    name="soiusa",
-    title="SOIUSA",
+    name="soiusa_sz",
+    title="SOIUSA Sezioni",
     groups=GROUPS,
     hauptgruppen=HAUPTGRUPPEN,
     colors={

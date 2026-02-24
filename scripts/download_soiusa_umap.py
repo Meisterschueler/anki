@@ -23,7 +23,7 @@ import requests
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from deck import DATA_DIR_OSM
 
-OUTPUT_FILE = DATA_DIR_OSM / "westalpen_soiusa.geojson"
+OUTPUT_FILE = DATA_DIR_OSM / "westalpen_soiusa_sz.geojson"
 
 # uMap datalayer UUIDs for the two Western Alps sectors
 LAYERS = {

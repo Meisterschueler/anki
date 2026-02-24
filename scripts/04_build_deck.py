@@ -762,23 +762,22 @@ def main():
     d = D.get_deck(args.region, args.system)
 
     # ── Check for subdeck-merge redirect ─────────────────────────────────
-    merge_key = f"{args.region}_{args.system or D.REGION_DEFAULTS[args.region]}"
-    if merge_key not in D.SUBDECK_MERGE:
-        for primary_key, entries in D.SUBDECK_MERGE.items():
-            primary_system = entries[0][0]
-            secondary_systems = [s for s, _ in entries[1:]]
-            actual_system = args.system or D.REGION_DEFAULTS[args.region]
-            if actual_system in secondary_systems:
-                print(f"[INFO] '{actual_system}' is part of the combined "
-                      f"'{primary_key}' deck.")
-                print(f"       Use:  python scripts/04_build_deck.py "
-                      f"--region {args.region} --system {primary_system}")
-                sys.exit(0)
+    actual_system = args.system or D.REGION_DEFAULTS[args.region]
+    merge_key = D._merge_key_for(args.region, actual_system)
+
+    if merge_key and merge_key in D.SUBDECK_MERGE:
+        primary_system = D.SUBDECK_MERGE[merge_key][0][0]
+        if actual_system != primary_system:
+            print(f"[INFO] '{actual_system}' is part of the combined "
+                  f"'{merge_key}' deck.")
+            print(f"       Use:  python scripts/04_build_deck.py "
+                  f"--region {args.region} --system {primary_system}")
+            sys.exit(0)
 
     if isinstance(d, POIDeck):
         print(f"=== Building POI APKG for: {d.title} ===\n")
         generate_apkg_poi(d)
-    elif merge_key in D.SUBDECK_MERGE:
+    elif merge_key:
         labels = " + ".join(lbl for _, lbl in D.SUBDECK_MERGE[merge_key])
         print(f"=== Building combined APKG ({labels}) for: {d.title} ===\n")
         generate_apkg_combined(args.region, merge_key)

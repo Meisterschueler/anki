@@ -9,7 +9,7 @@ Part I — Alpi Occidentali:
   Sector A — Alpi Sud-occidentali  (SZ 1–6,  23 STS)
   Sector B — Alpi Nord-occidentali (SZ 7–14, 32 STS)
 
-Hauptgruppen = parent Sezioni (14 groups, matching soiusa.py).
+Hauptgruppen = parent Sezioni (14 groups, matching westalpen_soiusa_sz.py).
 Data source: ARPA Piemonte FeatureServer (dissolved from Gruppo level).
 """
 

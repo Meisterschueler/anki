@@ -82,8 +82,8 @@ peak_soaring/
 ├── deck.py                          # Region / Classification / Deck / POIDeck
 ├── classifications/
 │   ├── ave84.py                     # 75 Ostalpen-Gruppen (AVE 84)
-│   ├── soiusa.py                    # 14 Westalpen-Sezioni (SOIUSA)
-│   ├── soiusa_sts.py                # 55 Westalpen-Sottosezioni (SOIUSA)
+│   ├── westalpen_soiusa_sz.py       # 14 Westalpen-Sezioni (SOIUSA)
+│   ├── westalpen_soiusa_sts.py      # 55 Westalpen-Sottosezioni (SOIUSA)
 │   └── pois.py                      # 40 POIs (Gipfel, Pässe, Orte, Täler)
 ├── regions/
 │   ├── ostalpen.py                  # Bbox, Städte, Projektion
@@ -105,8 +105,7 @@ peak_soaring/
 └── output/
     ├── ostalpen_ave84/              # .apkg + Bilder
     ├── ostalpen_pois/               # .apkg + Bilder
-    ├── westalpen_soiusa/            # .apkg + Bilder
-    └── westalpen_soiusa_sts/        # .apkg + Bilder
+    └── westalpen_soiusa/            # .apkg + Bilder (SZ + STS kombiniert)
 ```
 
 ## Lizenz
