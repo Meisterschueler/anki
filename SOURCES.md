@@ -58,6 +58,21 @@ Alle verwendeten Geodaten mit exakten Quellen, Lizenzen und Abrufmethoden.
 
 **Attributfelder pro Feature:** `OBJECTID`, `ID`, `PT`, `SR`, `SZ`, `STS`, `SPG`, `GR`, `STG`, `CODICE`, `SHAPE_LENG`, `Shape__Area`
 
+**Verwendete Regionsfilter:**
+
+| Region | Filter (`PT`) | Script-Aufruf |
+|--------|---------------|---------------|
+| Westalpen | `Alpi Occidentali` | `download_soiusa_arpa.py --region westalpen` |
+| Ostalpen | `Alpi Orientali` | `download_soiusa_arpa.py --region ostalpen` |
+
+**Erzeugte Dateien:**
+
+| Datei | Region | Ebene | Gruppen |
+|-------|--------|-------|---------|
+| `data/osm/westalpen_soiusa_sts.geojson` | Westalpen | STS | 55 |
+| `data/osm/ostalpen_soiusa_sz.geojson` | Ostalpen | SZ | 22 |
+| `data/osm/ostalpen_soiusa_sts.geojson` | Ostalpen | STS | 76 |
+
 ---
 
 ## 2. Grenzen, Flüsse, Seen (OSM)

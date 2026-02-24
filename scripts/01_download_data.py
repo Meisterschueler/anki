@@ -656,9 +656,11 @@ def main():
     print(f"=== Downloading data for: {d.title} ===\n")
 
     if not args.skip_osm:
-        if d.classification.name == "soiusa_sz" and not d.osm_geojson.exists():
+        if d.classification.name in ("soiusa_sz", "soiusa_sts") and not d.osm_geojson.exists():
             print(f"[OSM] {d.title} polygons are not from OSM.")
-            print(f"[OSM] Run: python scripts/download_soiusa_umap.py")
+            print(f"[OSM] Run: python scripts/download_soiusa_arpa.py "
+                  f"--level {'SZ' if d.classification.name == 'soiusa_sz' else 'STS'} "
+                  f"--region {args.region}")
         else:
             download_polygons(d)
         download_osm_rivers(d)

@@ -9,8 +9,10 @@ Erzeugt Anki-Lerndecks (`.apkg`) für **Gebirgsgruppen** und **Landmarks** der A
 | Region | System | Gruppen | Datenquelle |
 |--------|--------|---------|-------------|
 | Ostalpen | AVE 84 | 75 | OSM (`ref:aveo`) |
+| Ostalpen | SOIUSA (Sezioni) | 22 | ARPA Piemonte FeatureServer |
+| Ostalpen | SOIUSA (Sottosezioni) | 76 | ARPA Piemonte FeatureServer |
 | Westalpen | SOIUSA (Sezioni) | 14 | uMap (homoalpinus.com) |
-| Westalpen | SOIUSA (Sottosezioni) | 55 | uMap (homoalpinus.com) |
+| Westalpen | SOIUSA (Sottosezioni) | 55 | ARPA Piemonte FeatureServer |
 
 ### POI-Decks (Punkte)
 
@@ -41,7 +43,8 @@ Zwei Templates pro POI:
 | Quelle | Verwendung |
 |--------|-----------|
 | OpenStreetMap | Gebirgsgruppen-Polygone, Ländergrenzen, Flüsse, Seen |
-| uMap #954288 | SOIUSA-Polygone (Westalpen) |
+| uMap #954288 | SOIUSA-Polygone (Westalpen SZ) |
+| ARPA Piemonte | SOIUSA-Polygone (Ost- & Westalpen) |
 | CGIAR-CSI SRTM 90m | Höhenmodell für Reliefkarte |
 
 ## Setup
@@ -57,17 +60,22 @@ pip install -r requirements.txt
 ```bash
 # 1. Geodaten herunterladen
 python scripts/01_download_data.py --region ostalpen
-python scripts/download_soiusa_umap.py   # Westalpen SOIUSA
+python scripts/01_download_data.py --region westalpen
+python scripts/download_soiusa_umap.py   # Westalpen SOIUSA SZ (uMap)
 
 # 2. Basemap erzeugen (Hillshade + Seen + Flüsse)
 python scripts/02_generate_basemap.py --region ostalpen
+python scripts/02_generate_basemap.py --region westalpen
 
 # 3. Kartenbilder erzeugen
 python scripts/03_generate_cards.py --region ostalpen --system ave84 --force
+python scripts/03_generate_cards.py --region ostalpen --system soiusa_sz --force
+python scripts/03_generate_cards.py --region ostalpen --system soiusa_sts --force
 python scripts/03b_generate_poi_cards.py --region ostalpen --system pois --force
 
 # 4. Anki-Deck (.apkg) bauen
 python scripts/04_build_deck.py --region ostalpen --system ave84
+python scripts/04_build_deck.py --region ostalpen --system soiusa_sz
 python scripts/04_build_deck.py --region ostalpen --system pois
 
 # 5. Tests ausführen
@@ -82,6 +90,8 @@ peak_soaring/
 ├── deck.py                          # Region / Classification / Deck / POIDeck
 ├── classifications/
 │   ├── ave84.py                     # 75 Ostalpen-Gruppen (AVE 84)
+│   ├── ostalpen_soiusa_sz.py        # 22 Ostalpen-Sezioni (SOIUSA)
+│   ├── ostalpen_soiusa_sts.py       # 76 Ostalpen-Sottosezioni (SOIUSA)
 │   ├── westalpen_soiusa_sz.py       # 14 Westalpen-Sezioni (SOIUSA)
 │   ├── westalpen_soiusa_sts.py      # 55 Westalpen-Sottosezioni (SOIUSA)
 │   └── pois.py                      # 40 POIs (Gipfel, Pässe, Orte, Täler)
@@ -95,7 +105,8 @@ peak_soaring/
 │   ├── 03b_generate_poi_cards.py    # Kartenbilder für POI-Decks
 │   ├── 04_build_deck.py             # .apkg-Export (Polygon + POI)
 │   ├── 05_run_tests.py              # Pytest-Runner
-│   └── download_soiusa_umap.py      # SOIUSA-Polygone von uMap
+│   ├── download_soiusa_arpa.py      # SOIUSA-Polygone von ARPA Piemonte
+│   └── download_soiusa_umap.py      # SOIUSA-Polygone von uMap (Westalpen SZ)
 ├── tests/
 │   ├── test_deck_size.py            # .apkg Dateigröße < 50 MB
 │   └── test_image_dimensions.py     # Alle Bilder gleiche Dimensionen
@@ -105,11 +116,12 @@ peak_soaring/
 └── output/
     ├── ostalpen_ave84/              # .apkg + Bilder
     ├── ostalpen_pois/               # .apkg + Bilder
+    ├── ostalpen_soiusa/             # .apkg + Bilder (SZ + STS kombiniert)
     └── westalpen_soiusa/            # .apkg + Bilder (SZ + STS kombiniert)
 ```
 
 ## Lizenz
 
 - Kartendaten: © OpenStreetMap Contributors (ODbL)
-- SOIUSA-Polygone: homoalpinus.com / Capleymar
+- SOIUSA-Polygone: Massimo Accorsi / ARPA Piemonte, homoalpinus.com / Capleymar
 - SRTM-Daten: CGIAR-CSI / NASA (Public Domain)

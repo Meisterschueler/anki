@@ -423,7 +423,7 @@ REGION_DEFAULTS: Dict[str, str] = {
 
 # Valid (region, system) pairs
 VALID_COMBINATIONS: Dict[str, List[str]] = {
-    "ostalpen":  ["ave84", "pois"],
+    "ostalpen":  ["ave84", "soiusa_sz", "soiusa_sts", "pois"],
     "westalpen": ["soiusa_sz", "soiusa_sts"],
 }
 
@@ -432,6 +432,10 @@ VALID_COMBINATIONS: Dict[str, List[str]] = {
 # redirects to the first with a hint message.
 # Format:  "region_primary_system" -> [(system, subdeck_label), ...]
 SUBDECK_MERGE: Dict[str, List[Tuple[str, str]]] = {
+    "ostalpen_soiusa": [
+        ("soiusa_sz",  "A Gliederung"),
+        ("soiusa_sts", "B Details"),
+    ],
     "westalpen_soiusa": [
         ("soiusa_sz",  "A Gliederung"),
         ("soiusa_sts", "B Details"),
@@ -462,6 +466,12 @@ def _get_classification(region_name: str, system_name: str) -> Classification:
         return CLASSIFICATION
     elif key == ("westalpen", "soiusa_sts"):
         from classifications.westalpen_soiusa_sts import CLASSIFICATION
+        return CLASSIFICATION
+    elif key == ("ostalpen", "soiusa_sz"):
+        from classifications.ostalpen_soiusa_sz import CLASSIFICATION
+        return CLASSIFICATION
+    elif key == ("ostalpen", "soiusa_sts"):
+        from classifications.ostalpen_soiusa_sts import CLASSIFICATION
         return CLASSIFICATION
     elif key == ("ostalpen", "pois"):
         return None  # POI decks use _get_poi_classification instead
