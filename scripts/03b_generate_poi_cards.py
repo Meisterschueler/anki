@@ -25,6 +25,7 @@ Usage:
 import argparse
 import sys
 from pathlib import Path
+from typing import Optional
 
 import matplotlib
 matplotlib.use("Agg")
@@ -47,19 +48,93 @@ _bm = import_module("02_generate_basemap")
 create_figure = _bm.create_figure
 render_full_basemap = _bm.render_full_basemap
 generate_raster_basemap = _bm.generate_raster_basemap
+crop_basemap_from_parent = _bm.crop_basemap_from_parent
+_compute_pixel_dims = _bm._compute_pixel_dims
 render_country_borders = _bm.render_country_borders
 render_cities = _bm.render_cities
 
-# Import save_figure from 03
+# Import shared helpers from 03
 _cards = import_module("03_generate_cards")
 save_figure = _cards.save_figure
+generate_context = _cards.generate_context
+_generate_basemap = _cards._generate_basemap
+
+
+# ─── Valley polygon cache ─────────────────────────────────────────────────────
+
+_VALLEY_POLY_CACHE: dict = {}          # geojson-path → {name: shapely polygon}
+_VALLEY_BUFFER_M = 1000                # 1 km buffer around line geometries
+
+
+def _get_valley_polygons(d: POIDeck) -> dict:
+    """Load and cache 1 km–buffered valley polygons for *d*'s region."""
+    key = str(d.region.osm_valleys_geojson)
+    if key not in _VALLEY_POLY_CACHE:
+        polygons: dict = {}
+        path = Path(key)
+        if not path.exists():
+            # Fallback: output/data/osm/ mirror
+            alt = D.PROJECT_ROOT / "output" / "data" / "osm" / path.name
+            if alt.exists():
+                path = alt
+        if path.exists():
+            import geopandas as gpd
+            gdf = gpd.read_file(path)
+            gdf_metric = gdf.to_crs(epsg=3035)
+            gdf_metric["geometry"] = gdf_metric.geometry.buffer(_VALLEY_BUFFER_M)
+            gdf_buf = gdf_metric.to_crs(epsg=4326)
+            for _, row in gdf_buf.iterrows():
+                name = row.get("name", "")
+                if name:
+                    polygons[name] = row.geometry
+            print(f"[VALLEY] Loaded {len(polygons)} buffered valley polygons")
+        else:
+            print(f"[VALLEY] WARN: Valleys GeoJSON not found: {key}")
+        _VALLEY_POLY_CACHE[key] = polygons
+    return _VALLEY_POLY_CACHE[key]
+
+
+def _match_valley_polygon(poi: POI, valley_polys: dict):
+    """Find the buffered polygon for a valley POI (exact → word-boundary match)."""
+    if poi.name in valley_polys:
+        return valley_polys[poi.name]
+    # Word-boundary fallback (e.g. "Vinschgau" matches "Vinschgau - Val Venosta")
+    import re
+    pattern = re.compile(r'\b' + re.escape(poi.name), re.IGNORECASE)
+    for name, poly in valley_polys.items():
+        if pattern.search(name):
+            return poly
+    return None
+
+
+def _render_valley_area(ax, polygon, color: str, alpha: float = 0.35,
+                        linewidth: float = 1.0, zorder: int = 10):
+    """Render a valley polygon as a semi-transparent filled area."""
+    import matplotlib.colors as mcolors
+    r, g, b, _ = mcolors.to_rgba(color)
+    ax.add_geometries(
+        [polygon], crs=ccrs.PlateCarree(),
+        facecolor=(r, g, b, alpha),
+        edgecolor=(r, g, b, min(1.0, alpha + 0.4)),
+        linewidth=linewidth,
+        zorder=zorder,
+    )
 
 
 # ─── POI Rendering ───────────────────────────────────────────────────────────
 
 def _render_poi_marker(ax, poi: POI, style: dict, zorder: int = 10,
-                       size_scale: float = 1.0, alpha: float = 1.0):
-    """Render a single POI marker on the map."""
+                       size_scale: float = 1.0, alpha: float = 1.0,
+                       valley_polygon=None):
+    """Render a single POI marker on the map.
+
+    If *valley_polygon* is given (and the POI is a valley), the polygon
+    is drawn as a filled area instead of a point marker.
+    """
+    if valley_polygon is not None and poi.category == "valley":
+        _render_valley_area(ax, valley_polygon, style["color"],
+                            alpha=0.35 * alpha, zorder=zorder)
+        return
     ax.plot(
         poi.lon, poi.lat,
         marker=style["marker"],
@@ -74,13 +149,15 @@ def _render_poi_marker(ax, poi: POI, style: dict, zorder: int = 10,
 
 
 def render_all_pois(ax, d: POIDeck, label_fontsize: float = 4.0,
-                    label_alpha: float = 0.7, skip_poi_id: str = None):
+                    label_alpha: float = 0.7, skip_poi_id: Optional[str] = None):
     """Render all POI markers with optional small labels."""
+    valley_polys = _get_valley_polygons(d)
     for poi in d.pois:
         if poi.poi_id == skip_poi_id:
             continue
         style = d.category_style.get(poi.category, {})
-        _render_poi_marker(ax, poi, style, zorder=10)
+        vpoly = _match_valley_polygon(poi, valley_polys) if poi.category == "valley" else None
+        _render_poi_marker(ax, poi, style, zorder=10, valley_polygon=vpoly)
 
         # Small label (visible when zoomed in)
         display_name = poi.name
@@ -102,13 +179,37 @@ def render_all_pois(ax, d: POIDeck, label_fontsize: float = 4.0,
         )
 
 
-def render_poi_highlight(ax, poi: POI, radius_deg: float = 0.08):
-    """Render a red highlight circle around a target POI.
+# Fraction of latitude-span used as highlight circle radius.
+# Calibrated on the ostalpen full region (0.08° / 3.42° extent).
+_HIGHLIGHT_RADIUS_FRAC = 0.08 / 3.42
 
-    Uses an Ellipse with aspect-ratio correction so the circle appears
-    round on the projected map (lon degrees are narrower at higher lats).
+
+def render_poi_highlight(ax, poi: POI, d: POIDeck):
+    """Render a red highlight around a target POI.
+
+    For valleys with a GeoJSON polygon the buffered polygon is drawn.
+    For all other POIs an extent-scaled Ellipse is drawn so that the
+    highlight circle has the same *pixel* size regardless of zoom level
+    (full region vs sub-region).
     """
+    # ── Valley: polygon highlight ─────────────────────────────────────
+    if poi.category == "valley":
+        valley_polys = _get_valley_polygons(d)
+        vpoly = _match_valley_polygon(poi, valley_polys)
+        if vpoly is not None:
+            ax.add_geometries(
+                [vpoly], crs=ccrs.PlateCarree(),
+                facecolor=(0.8, 0.0, 0.0, 0.15),
+                edgecolor="#CC0000",
+                linewidth=2.5,
+                zorder=15,
+            )
+            return
+
+    # ── Circle: scaled to map extent ──────────────────────────────────
     import math
+    lat_span = d.bbox_north - d.bbox_south
+    radius_deg = _HIGHLIGHT_RADIUS_FRAC * lat_span
     lat_correction = 1.0 / math.cos(math.radians(poi.lat))
     circle = mpatches.Ellipse(
         (poi.lon, poi.lat),
@@ -196,7 +297,7 @@ def render_poi_question(ax, poi: POI, d: POIDeck, fontsize: float = 11):
 def render_legend(ax, d: POIDeck):
     """Render a small legend showing category symbols."""
     handles = []
-    for cat in ["peak", "pass", "town", "valley"]:
+    for cat in ["peak", "pass", "town", "valley", "lake"]:
         style = d.category_style.get(cat, {})
         if not style:
             continue
@@ -223,12 +324,6 @@ def render_legend(ax, d: POIDeck):
 
 # ─── Card Generation Functions ───────────────────────────────────────────────
 
-def _generate_basemap(d: POIDeck, force: bool = False):
-    """Generate the shared basemap WebP."""
-    basemap_path = d.output_images_dir / d.filename_basemap()
-    generate_raster_basemap(d, basemap_path, force=force)
-
-
 def generate_partition(d: POIDeck, output_path) -> None:
     """Partition map (Einteilung): all POIs coloured by category with legend."""
     fig, ax = create_figure(d)
@@ -236,17 +331,6 @@ def generate_partition(d: POIDeck, output_path) -> None:
                         rivers=False, lakes=False)
     render_all_pois(ax, d, label_fontsize=4.0, label_alpha=0.6)
     render_legend(ax, d)
-    save_figure(fig, output_path, overlay=True)
-    plt.close(fig)
-
-
-def generate_context(d: POIDeck, output_path) -> None:
-    """Shared context overlay: country borders + city labels."""
-    fig, ax = create_figure(d)
-    ax.set_facecolor("none")
-    ax.patch.set_alpha(0.0)
-    render_country_borders(ax, d)
-    render_cities(ax, d)
     save_figure(fig, output_path, overlay=True)
     plt.close(fig)
 
@@ -261,59 +345,19 @@ def generate_all_pois_overlay(d: POIDeck, output_path) -> None:
     plt.close(fig)
 
 
-def generate_poi_front_locate(d: POIDeck, poi: POI, output_path) -> None:
-    """Template 1 front — 'Wo ist X?' title label on transparent overlay."""
-    fig, ax = create_figure(d)
-    render_full_basemap(ax, d, cities=False, borders=False,
-                        rivers=False, lakes=False,
-                        svg_mode=False, overlay_mode=True)
-    render_poi_question(ax, poi, d)
-    save_figure(fig, output_path, overlay=True)
-    plt.close(fig)
-
-
-def generate_poi_back_locate(d: POIDeck, poi: POI, output_path) -> None:
-    """Template 1 back — all POIs + highlight circle (transparent overlay)."""
-    fig, ax = create_figure(d)
-    render_full_basemap(ax, d, cities=False, borders=False,
-                        rivers=False, lakes=False,
-                        svg_mode=False, overlay_mode=True)
-    render_all_pois(ax, d, label_fontsize=3.5, label_alpha=0.5,
-                    skip_poi_id=poi.poi_id)
-    render_poi_highlight(ax, poi)
-    style = d.category_style.get(poi.category, {})
-    render_poi_label(ax, poi, style)
-    save_figure(fig, output_path, overlay=True)
-    plt.close(fig)
-
-
 # ─── Overlay-only functions (for Anki CSS compositing) ───────────────────────
 
 def generate_poi_highlight_overlay(d: POIDeck, poi: POI, output_path) -> None:
-    """Overlay: just the red highlight circle (transparent bg).
+    """Overlay: red highlight circle on transparent background.
 
-    Used for Template 2 ('Was ist das?') front — composited with
-    basemap + all_pois in Anki via CSS.
+    Used for highlight and back overlays — composited with basemap +
+    context + all_pois in Anki via CSS.  Label is shown in the HTML
+    template, not burned into the image.
     """
     fig, ax = create_figure(d)
     ax.set_facecolor("none")
     ax.patch.set_alpha(0.0)
-    render_poi_highlight(ax, poi)
-    save_figure(fig, output_path, overlay=True)
-    plt.close(fig)
-
-
-def generate_poi_back_overlay(d: POIDeck, poi: POI, output_path) -> None:
-    """Overlay: highlight circle only (transparent bg).
-
-    Used for both template backs — composited with basemap + context +
-    all_pois in Anki via CSS.  Label is shown in the HTML template, not
-    burned into the image.
-    """
-    fig, ax = create_figure(d)
-    ax.set_facecolor("none")
-    ax.patch.set_alpha(0.0)
-    render_poi_highlight(ax, poi)
+    render_poi_highlight(ax, poi, d)
     save_figure(fig, output_path, overlay=True)
     plt.close(fig)
 
@@ -373,11 +417,146 @@ def generate_all(d: POIDeck, pois=None, force=False):
         back_path = d.output_images_dir / d.filename_poi_back(poi.poi_id, ".webp")
         if force or not back_path.exists():
             print(f"  [{count}/{total}] {cat_label} {poi.name} (back)")
-            generate_poi_back_overlay(d, poi, back_path)
+            generate_poi_highlight_overlay(d, poi, back_path)
         else:
             print(f"  [{count}/{total}] Skip (exists): {back_path.name}")
 
     print(f"\n[POI-CARDS] Done. {total} images in {d.output_images_dir}")
+
+
+# ─── Sub-Region Support ──────────────────────────────────────────────────────
+
+def generate_overview_thumbnail(
+    parent_deck: POIDeck,
+    sub_bbox: tuple,
+    output_path: Path,
+    force: bool = False,
+) -> None:
+    """Generate a small overview thumbnail of the full region with a red
+    rectangle marking the sub-region extent.
+
+    The thumbnail is placed in the bottom-right corner of sub-region cards
+    so the user always knows where they are within the full Ostalpen map.
+
+    Args:
+        parent_deck: The full-region POI deck (for basemap + extent).
+        sub_bbox: (west, east, south, north) of the sub-region.
+        output_path: Where to save the thumbnail WebP.
+        force: Overwrite if exists.
+    """
+    from PIL import Image, ImageDraw
+
+    if not force and output_path.exists():
+        print(f"[THUMB] cached: {output_path.name}")
+        return
+
+    # Load full-region basemap
+    basemap_path = parent_deck.output_images_dir / parent_deck.filename_basemap()
+    if not basemap_path.exists():
+        _generate_basemap(parent_deck, force=False)
+    if not basemap_path.exists():
+        print(f"[THUMB] ERROR: Basemap not found: {basemap_path}")
+        return
+
+    img = Image.open(str(basemap_path)).convert("RGB")
+    w, h = img.size
+
+    # Map geo coords → pixel coords
+    p_west = parent_deck.bbox_west
+    p_east = parent_deck.bbox_east
+    p_south = parent_deck.bbox_south
+    p_north = parent_deck.bbox_north
+
+    def geo_to_px(lon, lat):
+        x = (lon - p_west) / (p_east - p_west) * w
+        y = (p_north - lat) / (p_north - p_south) * h
+        return x, y
+
+    sub_west, sub_east, sub_south, sub_north = sub_bbox
+    x0, y0 = geo_to_px(sub_west, sub_north)  # top-left
+    x1, y1 = geo_to_px(sub_east, sub_south)  # bottom-right
+
+    # Draw red rectangle on image
+    draw = ImageDraw.Draw(img)
+    line_w = max(3, int(min(w, h) * 0.004))
+    draw.rectangle([x0, y0, x1, y1], outline="#CC0000", width=line_w)
+
+    # Scale to thumbnail size (~18% of full basemap width, min 200px)
+    thumb_w = max(200, int(w * 0.18))
+    thumb_h = int(h * thumb_w / w)
+    img = img.resize((thumb_w, thumb_h), Image.Resampling.LANCZOS)
+
+    # Add border
+    from PIL import ImageOps
+    img = ImageOps.expand(img, border=2, fill="#666666")
+
+    img.save(str(output_path), "WEBP", quality=85, method=6)
+    print(f"[THUMB] Generated: {output_path.name} ({img.size[0]}x{img.size[1]})")
+
+
+def generate_all_sub_regions(
+    parent_deck: POIDeck,
+    region_name: str,
+    force: bool = False,
+) -> None:
+    """Generate basemaps, overlays, and thumbnails for all sub-region decks.
+
+    Called automatically when generating images for a POI deck that has
+    sub-regions configured in POI_MULTI_DECK.
+    """
+    multi_cfg = D.POI_MULTI_DECK.get(f"{region_name}_pois")
+    if not multi_cfg:
+        return
+
+    sub_region_entries = multi_cfg.get("sub_regions", [])
+    sub_regions = D.SUB_REGIONS.get(region_name, [])
+    sub_by_key = {s.key: s for s in sub_regions}
+
+    for sub_key, sub_label in sub_region_entries:
+        sub = sub_by_key.get(sub_key)
+        if sub is None:
+            print(f"[SUB-REGION] WARN: Unknown sub-region {sub_key!r}")
+            continue
+
+        print(f"\n[SUB-REGION] === {sub_label} ({sub_key}) ===")
+
+        # Build the sub-region POIDeck
+        sub_deck = D.get_sub_region_poi_deck(region_name, sub_key)
+
+        # Ensure sub-region basemap exists.
+        # Try normal pipeline first; fall back to cropping from parent
+        # basemap when the DEM is unavailable.
+        sub_bm_path = sub_deck.output_images_dir / sub_deck.filename_basemap()
+        if force or not sub_bm_path.exists():
+            if sub_deck.region.dem_tif.exists():
+                _generate_basemap(sub_deck, force=force)
+            else:
+                parent_bm = parent_deck.output_images_dir / parent_deck.filename_basemap()
+                tw, th = _compute_pixel_dims(sub_deck)
+                parent_ext = (parent_deck.bbox_west, parent_deck.bbox_east,
+                              parent_deck.bbox_south, parent_deck.bbox_north)
+                sub_ext = (sub_deck.bbox_west, sub_deck.bbox_east,
+                           sub_deck.bbox_south, sub_deck.bbox_north)
+                crop_basemap_from_parent(
+                    parent_bm, parent_ext, sub_ext,
+                    sub_bm_path, tw, th,
+                )
+        else:
+            print(f"[BASEMAP] Already exists: {sub_bm_path.name}")
+
+        # Generate all overlay images for the sub-region deck
+        # (skip basemap — already handled above)
+        generate_all(sub_deck, force=force)
+
+        # Generate overview thumbnail
+        thumb_path = parent_deck.output_images_dir / \
+            f"{parent_deck.prefix}_thumb_{sub_key}.webp"
+        generate_overview_thumbnail(
+            parent_deck,
+            sub_bbox=(sub.bbox_west, sub.bbox_east, sub.bbox_south, sub.bbox_north),
+            output_path=thumb_path,
+            force=force,
+        )
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
@@ -407,7 +586,12 @@ def main():
             except KeyError:
                 print(f"[WARN] Unknown POI ID: {i}")
 
+    # Generate main deck images
     generate_all(d, pois=pois, force=args.force)
+
+    # Generate sub-region images if configured (POI_MULTI_DECK)
+    if not args.ids:
+        generate_all_sub_regions(d, args.region, force=args.force)
 
 
 if __name__ == "__main__":

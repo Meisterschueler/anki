@@ -49,39 +49,8 @@ def get_projection(d: Deck) -> ccrs.Projection:
 
 
 # ===========================================================================
-# DEM / HILLSHADE
+# HILLSHADE COLORMAP
 # ===========================================================================
-
-_dem_cache: dict = {}
-
-
-def load_dem(d: Deck):
-    """Load DEM; returns ``(array, extent, transform)``."""
-    key = str(d.dem_tif)
-    if key in _dem_cache:
-        return _dem_cache[key]
-
-    import rasterio
-
-    if not d.dem_tif.exists():
-        print("[WARN] DEM file not found. Run 01_download_data.py first.")
-        _dem_cache[key] = (None, None, None)
-        return _dem_cache[key]
-
-    with rasterio.open(str(d.dem_tif)) as src:
-        factor = max(1, src.width // D.DEM_DOWNSAMPLE_THRESHOLD,
-                     src.height // D.DEM_DOWNSAMPLE_THRESHOLD)
-        from rasterio.enums import Resampling as _Rsmp
-        dem = src.read(1, out_shape=(src.height // factor, src.width // factor),
-                       resampling=_Rsmp.cubic).astype(np.float32)
-        t = src.transform
-        extent = [t[2], t[2] + t[0] * src.width, t[5] + t[4] * src.height, t[5]]
-
-    dem[dem < -100] = 0
-    print(f"[DEM] Loaded: {dem.shape} (downsampled {factor}x)")
-    _dem_cache[key] = (dem, extent, t)
-    return dem, extent, t
-
 
 # Hypsometric terrain colormap (green lowlands -> brown mountains -> white peaks)
 _TERRAIN_CMAP = LinearSegmentedColormap.from_list("alpen_terrain", [
@@ -94,25 +63,6 @@ _TERRAIN_CMAP = LinearSegmentedColormap.from_list("alpen_terrain", [
     (0.88, (0.78, 0.75, 0.73)),
     (1.00, (0.95, 0.95, 0.97)),
 ], N=256)
-
-
-def render_hillshade(ax, d: Deck, alpha: float = 0.85) -> None:
-    """Hypsometric-tinted hillshade."""
-    dem, extent, _ = load_dem(d)
-    if dem is None:
-        return
-
-    ls = LightSource(azdeg=D.HILLSHADE_AZIMUTH, altdeg=D.HILLSHADE_ALTITUDE)
-    rgb = ls.shade(
-        np.clip(dem, 0, D.MAX_HILLSHADE_ELEVATION),
-        cmap=_TERRAIN_CMAP,
-        vert_exag=D.HILLSHADE_VERT_EXAG,
-        blend_mode=D.HILLSHADE_BLEND_MODE,
-    )
-    # PlateCarree projection matches the DEM's native WGS 84 CRS,
-    # so no regrid_shape is needed -- the raster is displayed directly.
-    ax.imshow(rgb, origin="upper", extent=extent, transform=ccrs.PlateCarree(),
-              alpha=alpha, interpolation="bilinear", zorder=1)
 
 
 # ===========================================================================
@@ -176,8 +126,13 @@ def _geo_transform(d: Deck, w_px: int, h_px: int):
 
 
 def _layer_dir(d: Deck) -> Path:
-    """Return the basemap layer cache directory for *d*."""
-    p = d.output_images_dir / "_basemap_layers"
+    """Return the basemap layer cache directory for *d*.
+
+    Each deck gets its own subdirectory so that sub-region decks
+    (which share ``output_images_dir`` with their parent) cache
+    their own hillshade/lakes/rivers layers independently.
+    """
+    p = d.output_images_dir / "_basemap_layers" / d.prefix
     p.mkdir(parents=True, exist_ok=True)
     return p
 
@@ -381,6 +336,73 @@ def _render_rivers_layer(d: Deck, layer_path: Path, force: bool = False) -> None
 
 
 # ---------------------------------------------------------------------------
+# Sub-region fallback: crop parent basemap when DEM is unavailable
+# ---------------------------------------------------------------------------
+
+def crop_basemap_from_parent(
+    parent_basemap_path: Path,
+    parent_extent: tuple,
+    sub_extent: tuple,
+    output_path: Path,
+    target_w: int,
+    target_h: int,
+) -> bool:
+    """Crop the parent basemap to *sub_extent* and resize to target dims.
+
+    Uses approximate linear geo-to-pixel mapping (adequate for small
+    sub-regions within the same basemap).  Returns True on success.
+
+    Args:
+        parent_basemap_path: Path to the full-region basemap WebP.
+        parent_extent: (west, east, south, north) of the parent.
+        sub_extent: (west, east, south, north) of the sub-region.
+        output_path: Where to save the cropped basemap WebP.
+        target_w: Target pixel width.
+        target_h: Target pixel height.
+    """
+    from PIL import Image
+
+    if not parent_basemap_path.exists():
+        print(f"[BASEMAP-CROP] ERROR: Parent basemap not found: "
+              f"{parent_basemap_path}")
+        return False
+
+    img = Image.open(str(parent_basemap_path))
+    pw, ph = img.size
+    p_w, p_e, p_s, p_n = parent_extent
+    s_w, s_e, s_s, s_n = sub_extent
+
+    # Geo → pixel (linear mapping)
+    x0 = int((s_w - p_w) / (p_e - p_w) * pw)
+    x1 = int((s_e - p_w) / (p_e - p_w) * pw)
+    y0 = int((p_n - s_n) / (p_n - p_s) * ph)  # north = top = y=0
+    y1 = int((p_n - s_s) / (p_n - p_s) * ph)
+
+    # Clamp to image bounds
+    x0 = max(0, min(pw, x0))
+    x1 = max(0, min(pw, x1))
+    y0 = max(0, min(ph, y0))
+    y1 = max(0, min(ph, y1))
+
+    if x1 <= x0 or y1 <= y0:
+        print(f"[BASEMAP-CROP] ERROR: Crop region is empty "
+              f"({x0},{y0})-({x1},{y1})")
+        return False
+
+    cropped = img.crop((x0, y0, x1, y1))
+    resized = cropped.resize((target_w, target_h), Image.Resampling.LANCZOS)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    resized.save(str(output_path), "WEBP",
+                 quality=D.BASEMAP_WEBP_QUALITY, method=6)
+
+    size_kb = output_path.stat().st_size / 1024
+    print(f"[BASEMAP-CROP] Cropped from parent: {output_path.name} "
+          f"({size_kb:,.0f} KB, {target_w}x{target_h} px)")
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Composite:  hillshade + lakes + rivers  ->  final basemap PNG
 # ---------------------------------------------------------------------------
 
@@ -459,7 +481,6 @@ def generate_raster_basemap(
 # COUNTRY BORDERS (OSM)
 # ===========================================================================
 
-_ne_cache: dict = {}
 _osm_border_cache: dict = {}
 
 
@@ -591,29 +612,6 @@ def _load_osm_rivers(d: Deck) -> gpd.GeoDataFrame:
           f"{dissolved_count} dissolved -> {kept_count} >={D.RIVER_MIN_LENGTH_KM} km")
     _osm_river_cache[key] = gdf
     return gdf
-
-
-def render_rivers(ax, d: Deck) -> None:
-    """Render rivers from OSM GeoJSON data."""
-    rivers = _load_osm_rivers(d)
-    if rivers.empty:
-        return
-    ax.add_geometries(
-        rivers.geometry, crs=ccrs.PlateCarree(),
-        facecolor="none", edgecolor=D.RIVER_COLOR,
-        linewidth=D.RIVER_LINEWIDTH, zorder=3, alpha=1.0,
-    )
-
-
-def render_lakes(ax, d: Deck) -> None:
-    lakes = _load_osm_lakes(d)
-    if lakes.empty:
-        return
-    ax.add_geometries(
-        lakes.geometry, crs=ccrs.PlateCarree(),
-        facecolor=D.LAKE_FACECOLOR, edgecolor=D.LAKE_EDGECOLOR,
-        linewidth=D.LAKE_LINEWIDTH, zorder=3, alpha=1.0,
-    )
 
 
 def render_country_borders(ax, d: Deck) -> None:

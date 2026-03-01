@@ -23,13 +23,13 @@ GROUPS: List[Gebirgsgruppe] = [
     # ═══════════════════════════════════════════════════════════════════════════
     # NÖRDLICHE OSTALPEN (Northern Limestone Alps) — 27 groups
     # ═══════════════════════════════════════════════════════════════════════════
-    Gebirgsgruppe("1",   "Bregenzerwaldgebirge",           NORD, "Glatthorn (2134 m)",              "01"),
+    Gebirgsgruppe("1",   "Bregenzerwaldgebirge",           NORD, "Glatthorn (2133 m)",              "01"),
     Gebirgsgruppe("2",   "Allgäuer Alpen",                 NORD, "Großer Krottenkopf (2657 m)",     "02"),
     Gebirgsgruppe("3a",  "Lechquellengebirge",             NORD, "Große Wildgrubenspitze (2753 m)", "03a"),
     Gebirgsgruppe("3b",  "Lechtaler Alpen",                NORD, "Parseierspitze (3036 m)",         "03b"),
     Gebirgsgruppe("4",   "Wettersteingebirge und Mieminger Kette", NORD, "Zugspitze (2962 m)",     "04"),
     Gebirgsgruppe("5",   "Karwendel",                      NORD, "Birkkarspitze (2749 m)",          "05"),
-    Gebirgsgruppe("6",   "Brandenberger Alpen",            NORD, "Hochiss (2299 m)",                "06"),
+    Gebirgsgruppe("6",   "Brandenberger Alpen (Rofangebirge)", NORD, "Hochiss (2299 m)",           "06"),
     Gebirgsgruppe("7a",  "Ammergauer Alpen",               NORD, "Daniel (2340 m)",                 "07a"),
     Gebirgsgruppe("7b",  "Bayerische Voralpen",            NORD, "Krottenkopf (2086 m)",            "07b"),
     Gebirgsgruppe("8",   "Kaisergebirge",                  NORD, "Ellmauer Halt (2344 m)",          "08"),
@@ -57,7 +57,7 @@ GROUPS: List[Gebirgsgruppe] = [
     Gebirgsgruppe("25",  "Rätikon",                        ZENTRAL, "Schesaplana (2964 m)",           "25"),
     Gebirgsgruppe("26",  "Silvretta",                      ZENTRAL, "Piz Linard (3411 m)",            "26"),
     Gebirgsgruppe("27",  "Samnaungruppe",                  ZENTRAL, "Muttler (3294 m)",               "27"),
-    Gebirgsgruppe("28",  "Verwallgruppe",                  ZENTRAL, "Hoher Riffler (3168 m)",         "28"),
+    Gebirgsgruppe("28",  "Verwall",                        ZENTRAL, "Hoher Riffler (3168 m)",         "28"),
     Gebirgsgruppe("29",  "Sesvennagruppe",                 ZENTRAL, "Piz Sesvenna (3204 m)",          "29"),
     Gebirgsgruppe("30",  "Ötztaler Alpen",                 ZENTRAL, "Wildspitze (3768 m)",            "30"),
     Gebirgsgruppe("31",  "Stubaier Alpen",                 ZENTRAL, "Zuckerhütl (3507 m)",            "31"),
@@ -72,7 +72,7 @@ GROUPS: List[Gebirgsgruppe] = [
     Gebirgsgruppe("40",  "Glocknergruppe",                 ZENTRAL, "Großglockner (3798 m)",          "40"),
     Gebirgsgruppe("41",  "Schobergruppe",                  ZENTRAL, "Petzeck (3283 m)",               "41"),
     Gebirgsgruppe("42",  "Goldberggruppe",                 ZENTRAL, "Hocharn (3254 m)",               "42"),
-    Gebirgsgruppe("43",  "Kreuzeckgruppe",                 ZENTRAL, "Polinik (2784 m)",               "43"),
+    Gebirgsgruppe("43",  "Kreuzeckgruppe",                 ZENTRAL, "Mölltaler Polinik (2784 m)",     "43"),
     Gebirgsgruppe("44",  "Ankogelgruppe",                  ZENTRAL, "Hochalmspitze (3360 m)",         "44"),
     Gebirgsgruppe("45a", "Radstädter Tauern",              ZENTRAL, "Weißeck (2711 m)",               "45a"),
     Gebirgsgruppe("45b", "Schladminger Tauern",            ZENTRAL, "Hochgolling (2862 m)",           "45b"),
@@ -90,8 +90,8 @@ GROUPS: List[Gebirgsgruppe] = [
     Gebirgsgruppe("48c", "Nonsberggruppe",                 SUED, "Laugenspitze (2434 m)",           "48c"),
     Gebirgsgruppe("49",  "Adamello-Presanella-Alpen",      SUED, "Presanella (3556 m)",             "49"),
     Gebirgsgruppe("50",  "Gardaseeberge",                  SUED, "Monte Cadria (2254 m)",           "50"),
-    Gebirgsgruppe("51",  "Brentagruppe",                   SUED, "Cima Tosa (3173 m)",              "51"),
-    Gebirgsgruppe("52",  "Dolomiten",                      SUED, "Marmolada (3343 m)",              "52"),
+    Gebirgsgruppe("51",  "Brentagruppe",                   SUED, "Cima Brenta (3152 m)",            "51"),
+    Gebirgsgruppe("52",  "Dolomiten",                      SUED, "Marmolata (3343 m)",              "52"),
     Gebirgsgruppe("53",  "Fleimstaler Alpen",              SUED, "Cima d'Asta (2847 m)",            "53"),
     Gebirgsgruppe("54",  "Vizentiner Alpen",               SUED, "Cima Dodici (2336 m)",            "54"),
     Gebirgsgruppe("56",  "Gailtaler Alpen",                SUED, "Große Sandspitze (2770 m)",       "56"),
@@ -105,9 +105,9 @@ GROUPS: List[Gebirgsgruppe] = [
     # WESTLICHE OSTALPEN (Western Eastern Alps) — 6 groups
     # ═══════════════════════════════════════════════════════════════════════════
     Gebirgsgruppe("63",  "Plessur-Alpen",                  WEST, "Aroser Rothorn (2980 m)",         "63"),
-    Gebirgsgruppe("64",  "Oberhalbsteiner Alpen",          WEST, "Piz Platta (3392 m)",             "64"),
+    Gebirgsgruppe("64",  "Plattagruppe",                   WEST, "Piz Platta (3392 m)",             "64"),
     Gebirgsgruppe("65",  "Albula-Alpen",                   WEST, "Piz Kesch (3418 m)",              "65"),
-    Gebirgsgruppe("66",  "Bernina",                        WEST, "Piz Bernina (4049 m)",            "66"),
+    Gebirgsgruppe("66",  "Bernina-Alpen",                  WEST, "Piz Bernina (4049 m)",            "66"),
     Gebirgsgruppe("67",  "Livigno-Alpen",                  WEST, "Cima de' Piazzi (3439 m)",        "67"),
     Gebirgsgruppe("68",  "Bergamasker Alpen",              WEST, "Pizzo di Coca (3052 m)",          "68"),
 ]

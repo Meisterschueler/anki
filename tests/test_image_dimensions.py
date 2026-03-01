@@ -86,7 +86,11 @@ class TestAllToplevelImages:
             pytest.skip(f"Directory not found: {image_dir}")
 
         # glob("*.webp") only matches direct children, not subdirs
-        files = sorted(image_dir.glob("*.webp"))
+        # Exclude thumbnails — they are intentionally smaller previews
+        files = sorted(
+            f for f in image_dir.glob("*.webp")
+            if "_thumb_" not in f.name
+        )
         if not files:
             pytest.skip(f"No WebP files in {image_dir}")
 

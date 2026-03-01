@@ -30,20 +30,29 @@ from deck import Deck
 # 1.  DOWNLOAD MOUNTAIN GROUP POLYGONS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _overpass_query(query):
-    """Run an Overpass query with retries. Returns parsed JSON."""
+def _overpass_query(query, *, label="OSM", graceful=False):
+    """Run an Overpass query with retries. Returns parsed JSON.
+
+    Args:
+        query: Overpass QL query string.
+        label: Log prefix for status messages.
+        graceful: If True, return None on final failure instead of raising.
+    """
     for attempt in range(3):
         try:
-            print(f"[OSM] Attempt {attempt + 1}/3 …")
+            print(f"[{label}] Attempt {attempt + 1}/3 …")
             resp = requests.post(D.OVERPASS_API_URL,
                                  data={"data": query},
                                  timeout=D.OVERPASS_TIMEOUT + 60)
             resp.raise_for_status()
             return resp.json()
-        except (requests.exceptions.Timeout, requests.exceptions.HTTPError) as e:
+        except requests.exceptions.RequestException as e:
             if attempt < 2:
-                print(f"[OSM]   failed: {e}. Retrying …")
+                print(f"[{label}]   failed: {e}. Retrying …")
                 time.sleep(10)
+            elif graceful:
+                print(f"[{label}] Giving up.")
+                return None
             else:
                 raise
 
@@ -320,21 +329,9 @@ def download_osm_borders(d: Deck):
         f"out geom;\n"
     )
 
-    for attempt in range(3):
-        try:
-            print(f"  Attempt {attempt + 1}/3 ...")
-            resp = requests.post(D.OVERPASS_API_URL,
-                                 data={"data": query},
-                                 timeout=D.OVERPASS_TIMEOUT + 30)
-            resp.raise_for_status()
-            data = resp.json()
-            break
-        except Exception as e:
-            print(f"  failed: {e}")
-            if attempt == 2:
-                print("[OSM-BORDERS] Giving up.")
-                return
-            time.sleep(10)
+    data = _overpass_query(query, label="OSM-BORDERS", graceful=True)
+    if data is None:
+        return
 
     from shapely.geometry import LineString
     features = []
@@ -467,20 +464,9 @@ def download_osm_rivers(d: Deck):
         f"out geom;\n"
     )
 
-    for attempt in range(3):
-        try:
-            resp = requests.post(D.OVERPASS_API_URL,
-                                 data={"data": query},
-                                 timeout=D.OVERPASS_TIMEOUT + 30)
-            resp.raise_for_status()
-            data = resp.json()
-            break
-        except Exception as e:
-            print(f"  Attempt {attempt + 1} failed: {e}")
-            if attempt == 2:
-                print("[OSM-RIVERS] Giving up.")
-                return
-            time.sleep(10)
+    data = _overpass_query(query, label="OSM-RIVERS", graceful=True)
+    if data is None:
+        return
 
     from shapely.geometry import LineString
     features = []
@@ -515,6 +501,120 @@ def download_osm_rivers(d: Deck):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# 4b. OSM VALLEYS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def download_osm_valleys(d: Deck):
+    """Download named valley lines from OSM, dissolve by name, filter by length."""
+    out = d.osm_valleys_geojson
+    if out.exists():
+        print(f"[OSM-VALLEYS] Already exists: {out}")
+        return
+
+    print(f"[OSM-VALLEYS] Downloading valleys for {d.title} …")
+
+    query = (
+        f"[out:json][timeout:{D.OVERPASS_TIMEOUT}];\n"
+        f"(\n"
+        f'  node["natural"="valley"]["name"]'
+        f"({d.bbox_south},{d.bbox_west},{d.bbox_north},{d.bbox_east});\n"
+        f'  way["natural"="valley"]["name"]'
+        f"({d.bbox_south},{d.bbox_west},{d.bbox_north},{d.bbox_east});\n"
+        f'  relation["natural"="valley"]["name"]'
+        f"({d.bbox_south},{d.bbox_west},{d.bbox_north},{d.bbox_east});\n"
+        f");\n"
+        f"out geom;\n"
+    )
+
+    data = _overpass_query(query, label="OSM-VALLEYS", graceful=True)
+    if data is None:
+        return
+
+    from shapely.geometry import LineString, Point
+    import geopandas as gpd
+
+    features = []
+    for el in data.get("elements", []):
+        name = el.get("tags", {}).get("name", "")
+        if not name.strip():
+            continue
+
+        if el["type"] == "node":
+            # Point valleys – keep as-is (no length, will be filtered out later)
+            features.append({
+                "type": "Feature",
+                "geometry": Point(el["lon"], el["lat"]).__geo_interface__,
+                "properties": {"name": name},
+            })
+
+        elif el["type"] == "way" and "geometry" in el:
+            coords = [(pt["lon"], pt["lat"]) for pt in el["geometry"]]
+            if len(coords) >= 2:
+                features.append({
+                    "type": "Feature",
+                    "geometry": LineString(coords).__geo_interface__,
+                    "properties": {"name": name},
+                })
+
+        elif el["type"] == "relation":
+            for member in el.get("members", []):
+                if member.get("type") == "way" and "geometry" in member:
+                    coords = [(pt["lon"], pt["lat"]) for pt in member["geometry"]]
+                    if len(coords) >= 2:
+                        features.append({
+                            "type": "Feature",
+                            "geometry": LineString(coords).__geo_interface__,
+                            "properties": {"name": name},
+                        })
+
+    if not features:
+        print("[OSM-VALLEYS] No valleys found.")
+        return
+
+    print(f"[OSM-VALLEYS] Raw features: {len(features)}")
+
+    # ── Build GeoDataFrame, dissolve by name, filter by length ───────────
+    gdf = gpd.GeoDataFrame.from_features(features, crs="EPSG:4326")
+
+    # Keep only LineStrings / MultiLineStrings (drop point-only valleys)
+    gdf = gdf[gdf.geometry.geom_type.isin(["LineString", "MultiLineString"])]
+
+    if gdf.empty:
+        print("[OSM-VALLEYS] No line geometries after filtering.")
+        return
+
+    # Dissolve segments with the same name
+    gdf = gdf.dissolve(by="name", as_index=False)
+
+    # Measure length in metric CRS (EPSG:3035 = ETRS89-LAEA Europe)
+    gdf_metric = gdf.to_crs(epsg=3035)
+    gdf["length_km"] = gdf_metric.geometry.length / 1000.0
+
+    # Filter by minimum length
+    min_km = D.VALLEY_MIN_LENGTH_KM
+    gdf = gdf[gdf["length_km"] >= min_km].copy()
+
+    print(f"[OSM-VALLEYS] After dissolve + filter (>= {min_km} km): "
+          f"{len(gdf)} valleys")
+
+    if gdf.empty:
+        print("[OSM-VALLEYS] No valleys meet the length threshold.")
+        return
+
+    # Sort by length descending for readability
+    gdf = gdf.sort_values("length_km", ascending=False)
+
+    for _, row in gdf.iterrows():
+        print(f"  {row['name']:40s}  {row['length_km']:.1f} km")
+
+    # Save — drop helper column
+    gdf_out = gdf.drop(columns=["length_km"])
+    out.parent.mkdir(parents=True, exist_ok=True)
+    gdf_out.to_file(out, driver="GeoJSON")
+    print(f"[OSM-VALLEYS] Saved → {out}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # 5.  OSM LAKES
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -538,21 +638,9 @@ def download_osm_lakes(d: Deck):
         f"out geom;\n"
     )
 
-    for attempt in range(3):
-        try:
-            print(f"  Attempt {attempt + 1}/3 …")
-            resp = requests.post(D.OVERPASS_API_URL,
-                                 data={"data": query},
-                                 timeout=D.OVERPASS_TIMEOUT + 30)
-            resp.raise_for_status()
-            data = resp.json()
-            break
-        except Exception as e:
-            print(f"  failed: {e}")
-            if attempt == 2:
-                print("[OSM-LAKES] Giving up.")
-                return
-            time.sleep(10)
+    data = _overpass_query(query, label="OSM-LAKES", graceful=True)
+    if data is None:
+        return
 
     from shapely.geometry import Polygon, MultiPolygon
     from shapely.validation import make_valid
@@ -665,6 +753,7 @@ def main():
             download_polygons(d)
         download_osm_rivers(d)
         download_osm_lakes(d)
+        download_osm_valleys(d)
         download_osm_borders(d)
 
     if not args.skip_dem:

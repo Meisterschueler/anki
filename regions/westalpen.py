@@ -30,10 +30,10 @@ REGION = Region(
         ("Valence",     4.891, 44.934,  0.05,  0.02),
         ("Gap",         6.079, 44.560,  0.05,  0.02),
         ("Avignon",     4.806, 43.949,  0.05,  0.02),
-        ("Nizza",       7.262, 43.710,  0.05,  0.02),
+        ("Nizza",       7.262, 43.700,  0.05,  0.02),
         ("Turin",       7.686, 45.070,  0.05,  0.02),
         ("Mailand",     9.190, 45.464,  0.05,  0.02),
-        ("Como",        9.085, 45.810,  0.05,  0.02),
+        ("Como",        9.085, 45.800,  0.05,  0.02),
         ("Lugano",      8.952, 46.010,  0.05,  0.02),
         ("Aosta",       7.315, 45.737,  0.05,  0.02),
         ("Chambéry",    5.917, 45.564,  0.05,  0.02),
@@ -47,6 +47,7 @@ REGION = Region(
 
     osm_rivers_geojson=DATA_DIR_OSM / "osm_rivers_westalpen.geojson",
     osm_lakes_geojson=DATA_DIR_OSM / "osm_lakes_westalpen.geojson",
+    osm_valleys_geojson=DATA_DIR_OSM / "osm_valleys_westalpen.geojson",
     osm_borders_geojson=DATA_DIR_OSM / "osm_borders_westalpen.geojson",
     dem_tif=DATA_DIR_DEM / "westalpen_dem.tif",
 )

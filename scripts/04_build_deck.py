@@ -44,7 +44,7 @@ def _ensure_images(d: Deck) -> None:
 # ─── APKG Export ─────────────────────────────────────────────────────────────
 
 # CSS for Anki cards — flat structure, all <img> are direct children of .card-map
-_APKG_CSS = """\
+_BASE_CSS = """\
 .card {
     font-family: "Segoe UI", Arial, Helvetica, sans-serif;
     font-size: 16px;
@@ -71,10 +71,6 @@ _APKG_CSS = """\
     width: 100%;
     height: 100%;
 }
-.card-map img.partition,
-.card-map img.context {
-    display: none;
-}
 .answer-info {
     margin: 10px 0;
     font-size: 18px;
@@ -82,10 +78,6 @@ _APKG_CSS = """\
 .answer-info .name {
     font-weight: bold;
     font-size: 20px;
-}
-.answer-info .gipfel {
-    color: #555;
-    font-size: 15px;
 }
 .hint-btn {
     position: absolute;
@@ -103,6 +95,17 @@ _APKG_CSS = """\
 }
 .hint-btn:hover {
     background: rgba(212,230,241,0.95);
+}
+"""
+
+_APKG_CSS = _BASE_CSS + """\
+.card-map img.partition,
+.card-map img.context {
+    display: none;
+}
+.answer-info .gipfel {
+    color: #555;
+    font-size: 15px;
 }
 """
 
@@ -136,21 +139,13 @@ _TMPL_BACK = """\
 """
 
 
-def generate_apkg(d: Deck) -> None:
-    """Generate a ready-to-import .apkg file for a single classification."""
-    _ensure_images(d)
+# ─── Shared Group model & helpers ─────────────────────────────────────────────
 
-    region_label = d.region.name.capitalize()
-    deck_title = f"Gebirgsgruppen der {region_label}"
-
-    # Stable IDs (deterministic from deck identity, not date)
-    base = f"peak_soaring_{d.name}"
-    model_id = int(hashlib.sha256(f"{base}_model".encode()).hexdigest()[:8], 16)
-    deck_id = int(hashlib.sha256(f"{base}_deck".encode()).hexdigest()[:8], 16)
-
-    model = genanki.Model(
+def _group_model(model_id: int, model_name: str) -> genanki.Model:
+    """Create the shared Anki model for polygon-group cards (AVE, SOIUSA)."""
+    return genanki.Model(
         model_id,
-        deck_title,
+        model_name,
         fields=[
             {"name": "Group_ID"},
             {"name": "Name"},
@@ -171,45 +166,65 @@ def generate_apkg(d: Deck) -> None:
         css=_APKG_CSS,
     )
 
-    anki_deck = genanki.Deck(deck_id, deck_title)
-    media_files: list[str] = []
 
-    # ── Check basemap ──────────────────────────────────────────────────────────
+def _collect_group_layers(d: Deck, media_files: list) -> dict:
+    """Validate and collect shared layer image paths for a group deck.
+
+    Returns a dict with HTML strings for basemap, partition, and context,
+    or None if any required file is missing.
+    """
+    result = {}
+
     basemap_file = d.filename_basemap()
     basemap_path = d.output_images_dir / basemap_file
     if not basemap_path.exists():
         print(f"[APKG] ERROR: Basemap not found: {basemap_path}")
-        print("       Run:  python scripts/03_generate_cards.py "
-              f"--region {d.region.name}")
-        return
+        return None
     media_files.append(str(basemap_path))
-    basemap_html = f'<img class="basemap" src="{basemap_file}">'
+    result["basemap_html"] = f'<img class="basemap" src="{basemap_file}">'
 
-    # ── Partition image (Einteilung, shared, toggle via hint button) ─────────
     partition_file = d.filename_partition(".webp")
     partition_path = d.output_images_dir / partition_file
     if not partition_path.exists():
         print(f"[APKG] ERROR: Partition not found: {partition_path}")
-        print("       Run:  python scripts/03_generate_cards.py "
-              f"--region {d.region.name}")
-        return
+        return None
     media_files.append(str(partition_path))
-    partition_html = f'<img class="overlay partition" src="{partition_file}">'
+    result["partition_html"] = f'<img class="overlay partition" src="{partition_file}">'
 
-    # ── Context image (borders + cities, toggle via hint button) ─────────────
     context_file = d.filename_context()
     context_path = d.output_images_dir / context_file
     if not context_path.exists():
         print(f"[APKG] ERROR: Context not found: {context_path}")
-        print("       Run:  python scripts/03_generate_cards.py "
-              f"--region {d.region.name}")
-        return
+        return None
     media_files.append(str(context_path))
-    context_html = f'<img class="overlay context" src="{context_file}">'
+    result["context_html"] = f'<img class="overlay context" src="{context_file}">'
 
-    # ── Build notes ──────────────────────────────────────────────────────────
+    return result
+
+
+def _build_group_notes(
+    d: Deck,
+    model: genanki.Model,
+    groups: list,
+    layers: dict,
+    media_files: list,
+) -> tuple:
+    """Build genanki.Note objects for a list of mountain groups.
+
+    Args:
+        d: Deck configuration (provides filenames).
+        model: Shared Anki model.
+        groups: List of Gebirgsgruppe objects to create notes for.
+        layers: Dict from _collect_group_layers (basemap/partition/context HTML).
+        media_files: Accumulator list for media file paths.
+
+    Returns:
+        (notes, skipped) — list of notes and count of skipped groups.
+    """
+    notes = []
     skipped = 0
-    for group in d.groups:
+
+    for group in groups:
         front_file = d.filename_group_front(group.group_id, ".webp")
         back_file = d.filename_group_back(group.group_id, ".webp")
         front_path = d.output_images_dir / front_file
@@ -217,50 +232,111 @@ def generate_apkg(d: Deck) -> None:
 
         if not front_path.exists() or not back_path.exists():
             skipped += 1
-            print(f"[APKG] WARN: Missing overlay for group {group.group_id} "
-                  f"({group.name})")
+            print(f"[APKG] WARN: Missing overlay for group "
+                  f"{group.group_id} ({group.name})")
             continue
 
         media_files.append(str(front_path))
         media_files.append(str(back_path))
 
-        # Embed <img> tags directly in the fields so Anki's media
-        # scanner picks them up during import.
         note = genanki.Note(
             model=model,
             fields=[
                 group.group_id,
                 group.name,
                 group.hoechster_gipfel,
-                basemap_html,
+                layers["basemap_html"],
                 f'<img class="overlay" src="{front_file}">',
                 f'<img class="overlay" src="{back_file}">',
-                partition_html,
-                context_html,
+                layers["partition_html"],
+                layers["context_html"],
             ],
         )
-        anki_deck.add_note(note)
+        notes.append(note)
+
+    return notes, skipped
+
+
+# ─── Shared APKG writer ──────────────────────────────────────────────────────
+
+def _write_apkg(
+    apkg_path: Path,
+    decks,
+    media_files: list,
+    *,
+    label: str = "APKG",
+    title: str = "",
+) -> None:
+    """Write one or more decks to an .apkg file and print a summary.
+
+    Args:
+        apkg_path: Output path for the .apkg file.
+        decks: A single genanki.Deck or a list of decks (for multi-deck).
+        media_files: List of media file paths to include.
+        label: Log prefix (e.g. "APKG", "APKG-POI").
+        title: Human-readable deck title for the summary line.
+    """
+    apkg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    is_multi = isinstance(decks, list)
+    package = genanki.Package(decks)
+    package.media_files = media_files
+    package.write_to_file(str(apkg_path))
+
+    if is_multi:
+        total_notes = sum(len(dk.notes) for dk in decks)
+        n_subdecks = len(decks)
+        n_media = len(media_files)
+        size_mb = apkg_path.stat().st_size / (1024 * 1024)
+        print(f"\n[{label}] {title}")
+        print(f"[{label}] {total_notes} notes in {n_subdecks} subdecks, "
+              f"{n_media} media files, {size_mb:.1f} MB")
+    else:
+        n_notes = len(decks.notes)
+        n_media = len(media_files)
+        size_mb = apkg_path.stat().st_size / (1024 * 1024)
+        print(f"\n[{label}] {title}")
+        print(f"[{label}] {n_notes} notes, {n_media} media files, {size_mb:.1f} MB")
+
+    print(f"[{label}] -> {apkg_path}")
+    print(f"\n  Import in Anki:  File -> Import -> {apkg_path.name}")
+
+
+# ─── Single group deck ────────────────────────────────────────────────────────
+
+def generate_apkg(d: Deck) -> None:
+    """Generate a ready-to-import .apkg file for a single classification."""
+    _ensure_images(d)
+
+    region_label = d.region.name.capitalize()
+    deck_title = f"Gebirgsgruppen der {region_label}"
+
+    base = f"peak_soaring_{d.name}"
+    model_id = int(hashlib.sha256(f"{base}_model".encode()).hexdigest()[:8], 16)
+    deck_id = int(hashlib.sha256(f"{base}_deck".encode()).hexdigest()[:8], 16)
+
+    model = _group_model(model_id, deck_title)
+    anki_deck = genanki.Deck(deck_id, deck_title)
+    media_files: list[str] = []
+
+    layers = _collect_group_layers(d, media_files)
+    if layers is None:
+        return
+
+    notes, skipped = _build_group_notes(d, model, d.groups, layers, media_files)
+    for n in notes:
+        anki_deck.add_note(n)
 
     if skipped:
         print(f"[APKG] WARNING: {skipped} groups skipped (missing overlays).")
         print("       Run:  python scripts/03_generate_cards.py "
               f"--region {d.region.name} --force")
 
-    # ── Write .apkg ──────────────────────────────────────────────────────────
-    apkg_path = d.output_csv_dir / f"{d.anki_csv_name}.apkg"
-    apkg_path.parent.mkdir(parents=True, exist_ok=True)
-
-    package = genanki.Package(anki_deck)
-    package.media_files = media_files
-    package.write_to_file(str(apkg_path))
-
-    n_notes = len(anki_deck.notes)
-    n_media = len(media_files)
-    size_mb = apkg_path.stat().st_size / (1024 * 1024)
-    print(f"\n[APKG] {deck_title}")
-    print(f"[APKG] {n_notes} notes, {n_media} media files, {size_mb:.1f} MB")
-    print(f"[APKG] -> {apkg_path}")
-    print(f"\n  Import in Anki:  File -> Import -> {apkg_path.name}")
+    _write_apkg(
+        d.output_csv_dir / f"{d.anki_csv_name}.apkg",
+        anki_deck, media_files,
+        label="APKG", title=deck_title,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -284,48 +360,16 @@ def generate_apkg_combined(region_name: str, merge_key: str) -> None:
         _ensure_images(d_sub)
 
     # ── Shared identity ────────────────────────────────────────────────────
-    d_primary = sub_decks_cfg[0][0]           # first deck drives naming
+    d_primary = sub_decks_cfg[0][0]
     region_label = d_primary.region.name.capitalize()
     parent_title = f"Gebirgsgruppen der {region_label}"
 
-    # One model for all subdecks (fields / templates / CSS are identical)
     base = f"peak_soaring_{merge_key}"
     model_id = int(hashlib.sha256(f"{base}_combined_model".encode()).hexdigest()[:8], 16)
+    model = _group_model(model_id, parent_title)
 
-    model = genanki.Model(
-        model_id,
-        parent_title,
-        fields=[
-            {"name": "Group_ID"},
-            {"name": "Name"},
-            {"name": "Hoechster_Gipfel"},
-            {"name": "Basemap"},
-            {"name": "FrontOverlay"},
-            {"name": "BackOverlay"},
-            {"name": "Partition"},
-            {"name": "Context"},
-        ],
-        templates=[
-            {
-                "name": "Gebirgsgruppe",
-                "qfmt": _TMPL_FRONT,
-                "afmt": _TMPL_BACK,
-            },
-        ],
-        css=_APKG_CSS,
-    )
-
-    # ── Shared basemap (from first sub-deck, identical raster for all) ───
-    basemap_file = d_primary.filename_basemap()
-    basemap_path = d_primary.output_images_dir / basemap_file
-    if not basemap_path.exists():
-        print(f"[APKG] ERROR: Basemap not found: {basemap_path}")
-        return
-
-    media_files: list[str] = [str(basemap_path)]
-    basemap_html = f'<img class="basemap" src="{basemap_file}">'
+    media_files: list[str] = []
     anki_subdecks: list = []
-    total_notes = 0
     total_skipped = 0
 
     # ── Build each subdeck ───────────────────────────────────────────────
@@ -337,248 +381,78 @@ def generate_apkg_combined(region_name: str, merge_key: str) -> None:
 
         anki_deck = genanki.Deck(subdeck_id, subdeck_title)
 
-        # Partition (per-classification — different groupings)
-        partition_file = d_sub.filename_partition(".webp")
-        partition_path = d_sub.output_images_dir / partition_file
-        if not partition_path.exists():
-            print(f"[APKG] ERROR: Partition not found: {partition_path}")
+        layers = _collect_group_layers(d_sub, media_files)
+        if layers is None:
             return
-        media_files.append(str(partition_path))
-        partition_html = f'<img class="overlay partition" src="{partition_file}">'
 
-        # Context (per-classification)
-        context_file = d_sub.filename_context()
-        context_path = d_sub.output_images_dir / context_file
-        if not context_path.exists():
-            print(f"[APKG] ERROR: Context not found: {context_path}")
-            return
-        media_files.append(str(context_path))
-        context_html = f'<img class="overlay context" src="{context_file}">'
+        notes, skipped = _build_group_notes(
+            d_sub, model, d_sub.groups, layers, media_files,
+        )
+        for n in notes:
+            anki_deck.add_note(n)
 
-        # Notes
-        skipped = 0
-        for group in d_sub.groups:
-            front_file = d_sub.filename_group_front(group.group_id, ".webp")
-            back_file = d_sub.filename_group_back(group.group_id, ".webp")
-            front_path = d_sub.output_images_dir / front_file
-            back_path = d_sub.output_images_dir / back_file
-
-            if not front_path.exists() or not back_path.exists():
-                skipped += 1
-                print(f"[APKG] WARN: Missing overlay for group "
-                      f"{group.group_id} ({group.name})")
-                continue
-
-            media_files.append(str(front_path))
-            media_files.append(str(back_path))
-
-            note = genanki.Note(
-                model=model,
-                fields=[
-                    group.group_id,
-                    group.name,
-                    group.hoechster_gipfel,
-                    basemap_html,
-                    f'<img class="overlay" src="{front_file}">',
-                    f'<img class="overlay" src="{back_file}">',
-                    partition_html,
-                    context_html,
-                ],
-            )
-            anki_deck.add_note(note)
-
-        n = len(anki_deck.notes)
-        total_notes += n
         total_skipped += skipped
-        print(f"[APKG]   {label}: {n} notes")
+        print(f"[APKG]   {label}: {len(anki_deck.notes)} notes")
         anki_subdecks.append(anki_deck)
 
     if total_skipped:
         print(f"[APKG] WARNING: {total_skipped} groups skipped (missing overlays).")
 
-    # ── Write combined .apkg ─────────────────────────────────────────────
-    apkg_path = d_primary.output_csv_dir / f"{d_primary.anki_csv_name}.apkg"
-    apkg_path.parent.mkdir(parents=True, exist_ok=True)
-
-    package = genanki.Package(anki_subdecks)
-    package.media_files = media_files
-    package.write_to_file(str(apkg_path))
-
-    n_media = len(media_files)
-    size_mb = apkg_path.stat().st_size / (1024 * 1024)
-    print(f"\n[APKG] {parent_title}")
-    print(f"[APKG] {total_notes} notes in {len(anki_subdecks)} subdecks, "
-          f"{n_media} media files, {size_mb:.1f} MB")
-    print(f"[APKG] -> {apkg_path}")
-    print(f"\n  Import in Anki:  File -> Import -> {apkg_path.name}")
+    _write_apkg(
+        d_primary.output_csv_dir / f"{d_primary.anki_csv_name}.apkg",
+        anki_subdecks, media_files,
+        label="APKG", title=parent_title,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # POI DECK — APKG Export
 # ═══════════════════════════════════════════════════════════════════════════════
 
-_POI_APKG_CSS = """\
-.card {
-    font-family: "Segoe UI", Arial, Helvetica, sans-serif;
-    font-size: 16px;
-    text-align: center;
-    color: #222;
-    background: #fff;
-    margin: 0;
-    padding: 0;
+_POI_APKG_CSS = _BASE_CSS + """\
+.card-map img.allpois,
+.card-map img.context {
+    display: none;
 }
-.question {
-    font-size: 20px;
-    font-weight: bold;
-    color: #CC0000;
-    margin: 10px 0 2px;
-}
-.info {
-    font-size: 14px;
-    color: #666;
-    margin-bottom: 6px;
-}
-.answer-info {
-    margin: 10px 0;
-    font-size: 18px;
-}
-.answer-info .name {
-    font-weight: bold;
-    font-size: 20px;
-    color: #CC0000;
+.card-map img.thumbnail {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    width: 18%;
+    min-width: 80px;
+    height: auto;
+    border: 2px solid #666;
+    border-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    z-index: 10;
+    opacity: 0.92;
 }
 .answer-info .detail {
     color: #555;
     font-size: 15px;
 }
-.card-map {
-    position: relative;
-    display: inline-block;
-    line-height: 0;
-    margin: 4px 0;
-    overflow: hidden;
-    cursor: pointer;
-    -webkit-user-select: none;
-    user-select: none;
-}
-.card-map img {
-    max-width: 100%;
-    transition: width 0.2s ease;
-}
-.card-map img.basemap {
-    display: block;
-}
-.card-map img.overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-}
-.card-map img.context {
-    display: none;
-}
-.hint-btn {
-    position: absolute;
-    top: 8px;
-    left: 8px;
-    padding: 5px 12px;
-    font-size: 12px;
-    color: #2E86C1;
-    background: rgba(235,245,251,0.9);
-    border: 1px solid #AED6F1;
-    border-radius: 5px;
-    cursor: pointer;
-    z-index: 5;
-    line-height: normal;
-}
-.hint-btn:hover {
-    background: rgba(212,230,241,0.95);
-}
 """
 
-# Pinch-to-zoom + double-tap JavaScript for Anki cards
-_POI_ZOOM_JS = """\
-<script>
-(function(){
-  document.querySelectorAll('.card-map').forEach(function(mc){
-    var scale = 1;
-    var lastTap = 0;
-    mc.addEventListener('touchend', function(e) {
-      var now = Date.now();
-      if (now - lastTap < 300) {
-        e.preventDefault();
-        scale = scale > 1 ? 1 : 2.5;
-        applyZoom(mc, scale);
-      }
-      lastTap = now;
-    });
-    mc.addEventListener('dblclick', function(e) {
-      e.preventDefault();
-      scale = scale > 1 ? 1 : 2.5;
-      applyZoom(mc, scale);
-    });
-  });
-  function applyZoom(mc, s) {
-    mc.querySelectorAll('img').forEach(function(img) {
-      img.style.width = s > 1 ? (s * 100) + '%' : '';
-      img.style.maxWidth = s > 1 ? 'none' : '100%';
-    });
-    mc.style.overflow = s > 1 ? 'auto' : 'hidden';
-    if (s <= 1) { mc.scrollLeft = 0; mc.scrollTop = 0; }
-  }
-})();
-</script>
-"""
-
-# Template 1: "Wo ist X?"  (locate a named POI on the blank map)
-_POI_TMPL_LOCATE_FRONT = """\
-<div class="question">Wo ist: {{Name}}?</div>
-<div class="info">{{Category}} · {{Info}}</div>
-<hr>
-<div class="card-map">
-{{Basemap}}
-{{Context}}
-<button class="hint-btn" onclick="var i=this.parentNode.querySelector('img.context');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\u2716 Kontext':'\u25a6 Kontext';sessionStorage.setItem('ps_ctx',v?'1':'0');">&#9638; Kontext</button>
-</div>
-<script>(function(){var c=document.querySelector('.card-map');if(!c)return;if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';var b=c.querySelector('.hint-btn');if(b)b.textContent='\u2716 Kontext';}})();</script>
-""" + _POI_ZOOM_JS
-
-_POI_TMPL_LOCATE_BACK = """\
-<div class="answer-info">
-<span class="name">{{Name}}</span>
-<span class="detail"> · {{Category}} · {{Info}}</span>
-</div>
-<hr>
-<div class="card-map">
-{{Basemap}}
-{{AllPois}}
-{{BackOverlay}}
-{{Context}}
-<button class="hint-btn" onclick="var i=this.parentNode.querySelector('img.context');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\u2716 Kontext':'\u25a6 Kontext';sessionStorage.setItem('ps_ctx',v?'1':'0');">&#9638; Kontext</button>
-</div>
-<script>(function(){var c=document.querySelector('.card-map');if(!c)return;if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';var b=c.querySelector('.hint-btn');if(b)b.textContent='\u2716 Kontext';}})();</script>
-""" + _POI_ZOOM_JS
-
-# Template 2: "Was ist das?"  (identify a highlighted POI)
+# Template: "Welcher Gipfel/Pass/... ist das?"  (identify a highlighted POI)
+# {{#Thumbnail}}…{{/Thumbnail}} conditionally renders the overview thumbnail
+# only for sub-region decks (field is empty for category decks).
 _POI_TMPL_IDENTIFY_FRONT = """\
-<div class="question">Was ist das?</div>
-<div class="info">{{Category}}</div>
-<hr>
 <div class="card-map">
 {{Basemap}}
 {{AllPois}}
 {{Highlight}}
 {{Context}}
-<button class="hint-btn" onclick="var i=this.parentNode.querySelector('img.context');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\u2716 Kontext':'\u25a6 Kontext';sessionStorage.setItem('ps_ctx',v?'1':'0');">&#9638; Kontext</button>
+{{#Thumbnail}}{{Thumbnail}}{{/Thumbnail}}
+<button class="hint-btn" onclick="var i=this.parentNode.querySelector('img.allpois');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\\u2716 POIs':'\\u25a6 POIs';sessionStorage.setItem('ps_pois',v?'1':'0');">&#9638; POIs</button>
+<button class="hint-btn" style="left:80px;" onclick="var i=this.parentNode.querySelector('img.context');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\\u2716 Kontext':'\\u25a6 Kontext';sessionStorage.setItem('ps_ctx',v?'1':'0');">&#9638; Kontext</button>
 </div>
-<script>(function(){var c=document.querySelector('.card-map');if(!c)return;if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';var b=c.querySelector('.hint-btn');if(b)b.textContent='\u2716 Kontext';}})();</script>
-""" + _POI_ZOOM_JS
+<script>(function(){var c=document.querySelector('.card-map');if(!c)return;var bs=c.querySelectorAll('.hint-btn');if(sessionStorage.getItem('ps_pois')==='1'){var a=c.querySelector('img.allpois');if(a)a.style.display='block';if(bs[0])bs[0].textContent='\\u2716 POIs';}if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';if(bs[1])bs[1].textContent='\\u2716 Kontext';}})();</script>
+"""
 
 _POI_TMPL_IDENTIFY_BACK = """\
 <div class="answer-info">
-<span class="name">{{Name}}</span><br>
-<span class="detail">{{Category}} · {{Info}}</span>
+<div class="name">{{Name}}</div>
+<div class="detail">{{Category}} · {{Info}}</div>
 </div>
 <hr>
 <div class="card-map">
@@ -586,38 +460,27 @@ _POI_TMPL_IDENTIFY_BACK = """\
 {{AllPois}}
 {{BackOverlay}}
 {{Context}}
-<button class="hint-btn" onclick="var i=this.parentNode.querySelector('img.context');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\u2716 Kontext':'\u25a6 Kontext';sessionStorage.setItem('ps_ctx',v?'1':'0');">&#9638; Kontext</button>
+{{#Thumbnail}}{{Thumbnail}}{{/Thumbnail}}
+<button class="hint-btn" onclick="var i=this.parentNode.querySelector('img.allpois');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\\u2716 POIs':'\\u25a6 POIs';sessionStorage.setItem('ps_pois',v?'1':'0');">&#9638; POIs</button>
+<button class="hint-btn" style="left:80px;" onclick="var i=this.parentNode.querySelector('img.context');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\\u2716 Kontext':'\\u25a6 Kontext';sessionStorage.setItem('ps_ctx',v?'1':'0');">&#9638; Kontext</button>
 </div>
-<script>(function(){var c=document.querySelector('.card-map');if(!c)return;if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';var b=c.querySelector('.hint-btn');if(b)b.textContent='\u2716 Kontext';}})();</script>
-""" + _POI_ZOOM_JS
+<script>(function(){var c=document.querySelector('.card-map');if(!c)return;var bs=c.querySelectorAll('.hint-btn');if(sessionStorage.getItem('ps_pois')==='1'){var a=c.querySelector('img.allpois');if(a)a.style.display='block';if(bs[0])bs[0].textContent='\\u2716 POIs';}if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';if(bs[1])bs[1].textContent='\\u2716 Kontext';}})();</script>
+"""
 
 
-def generate_apkg_poi(d: POIDeck) -> None:
-    """Generate a ready-to-import .apkg file for a POI deck.
+# ─── Shared POI model ─────────────────────────────────────────────────────────
 
-    Two card templates:
-      1. "Wo ist X?"     — front: question + basemap,
-                            back: basemap + all_pois + back; Kontext button toggles context
-      2. "Was ist das?"   — front: basemap + all_pois + highlight circle,
-                            back: basemap + all_pois + back; Kontext button toggles context
+def _poi_model(model_id: int, model_name: str) -> genanki.Model:
+    """Create the shared Anki model for POI cards.
 
-    Supports double-tap / pinch-to-zoom via embedded JavaScript.
+    Fields:
+        POI_ID, Name, Category, Info,
+        Basemap, AllPois, Highlight, BackOverlay, Context,
+        Thumbnail  (empty string for full-map decks, filename for sub-regions)
     """
-    _ensure_images(d)
-
-    today = date.today().isoformat()
-    region_label = d.region.name.capitalize()
-    system_label = d.poi_classification.title
-    deck_title = f"{region_label} {system_label} (Beta {today})"
-
-    # Stable IDs (deterministic from deck identity)
-    base = f"peak_soaring_{d.name}"
-    model_id = int(hashlib.sha256(f"{base}_poi_model".encode()).hexdigest()[:8], 16)
-    deck_id = int(hashlib.sha256(f"{base}_poi_deck".encode()).hexdigest()[:8], 16)
-
-    model = genanki.Model(
+    return genanki.Model(
         model_id,
-        f"{region_label} {system_label}",
+        model_name,
         fields=[
             {"name": "POI_ID"},
             {"name": "Name"},
@@ -628,13 +491,9 @@ def generate_apkg_poi(d: POIDeck) -> None:
             {"name": "Highlight"},
             {"name": "BackOverlay"},
             {"name": "Context"},
+            {"name": "Thumbnail"},
         ],
         templates=[
-            {
-                "name": "Wo ist X?",
-                "qfmt": _POI_TMPL_LOCATE_FRONT,
-                "afmt": _POI_TMPL_LOCATE_BACK,
-            },
             {
                 "name": "Was ist das?",
                 "qfmt": _POI_TMPL_IDENTIFY_FRONT,
@@ -644,43 +503,89 @@ def generate_apkg_poi(d: POIDeck) -> None:
         css=_POI_APKG_CSS,
     )
 
-    anki_deck = genanki.Deck(deck_id, deck_title)
-    media_files: list[str] = []
 
-    # ── Shared layers ──────────────────────────────────────────────────────
+# ─── Shared POI note construction ─────────────────────────────────────────────
+
+def _poi_info_str(poi) -> str:
+    """Build the Info field string for a POI note."""
+    parts = []
+    if poi.elevation:
+        parts.append(f"{poi.elevation} m")
+    if poi.subtitle:
+        parts.append(poi.subtitle)
+    return " · ".join(parts) if parts else ""
+
+
+def _collect_shared_layers(d: POIDeck, media_files: list) -> dict:
+    """Validate and collect shared layer image paths for a POI deck.
+
+    Returns a dict with HTML strings for basemap, all_pois, and context,
+    or None if any required file is missing.
+    """
+    result = {}
+
     basemap_file = d.filename_basemap()
     basemap_path = d.output_images_dir / basemap_file
     if not basemap_path.exists():
         print(f"[APKG-POI] ERROR: Basemap not found: {basemap_path}")
-        return
+        return None
     media_files.append(str(basemap_path))
+    result["basemap_html"] = f'<img class="basemap" src="{basemap_file}">'
 
     context_file = d.filename_context()
     context_path = d.output_images_dir / context_file
     if not context_path.exists():
         print(f"[APKG-POI] ERROR: Context not found: {context_path}")
-        return
+        return None
     media_files.append(str(context_path))
+    result["context_html"] = f'<img class="overlay context" src="{context_file}">'
 
     all_pois_file = d.filename_all_pois_overlay(".webp")
     all_pois_path = d.output_images_dir / all_pois_file
     if not all_pois_path.exists():
         print(f"[APKG-POI] ERROR: All-POIs overlay not found: {all_pois_path}")
-        return
+        return None
     media_files.append(str(all_pois_path))
+    result["all_pois_html"] = f'<img class="overlay allpois" src="{all_pois_file}">'
 
-    basemap_html = f'<img class="basemap" src="{basemap_file}">'
-    all_pois_html = f'<img class="overlay" src="{all_pois_file}">'
-    context_html = f'<img class="overlay context" src="{context_file}">'
+    return result
 
-    # ── Category labels ────────────────────────────────────────────────────
-    cat_labels = {}
-    for cat, style in d.category_style.items():
-        cat_labels[cat] = style.get("label", cat.capitalize())
 
-    # ── Build notes ────────────────────────────────────────────────────────
+def _build_poi_notes(
+    d: POIDeck,
+    model: genanki.Model,
+    pois: list,
+    layers: dict,
+    media_files: list,
+    thumbnail_file: str = "",
+    guid_prefix: str = "",
+    extra_tags: list = None,
+) -> tuple:
+    """Build genanki.Note objects for a list of POIs.
+
+    Args:
+        d: POI deck (provides filenames and category styles).
+        model: Shared Anki model.
+        pois: List of POI objects to create notes for.
+        layers: Dict from _collect_shared_layers (basemap/allpois/context HTML).
+        media_files: Accumulator list for media file paths.
+        thumbnail_file: Filename for the overview thumbnail (empty = none).
+        guid_prefix: Prefix for deterministic GUIDs (avoids collisions
+                     when the same POI appears in multiple subdecks).
+        extra_tags: Additional Anki tags beyond the POI category.
+
+    Returns:
+        (notes, skipped) — list of notes and count of skipped POIs.
+    """
+    cat_labels = {
+        cat: style.get("label", cat.capitalize())
+        for cat, style in d.category_style.items()
+    }
+
+    notes = []
     skipped = 0
-    for poi in d.pois:
+
+    for poi in pois:
         highlight_file = d.filename_poi_highlight(poi.poi_id, ".webp")
         back_file = d.filename_poi_back(poi.poi_id, ".webp")
         highlight_path = d.output_images_dir / highlight_file
@@ -700,58 +605,209 @@ def generate_apkg_poi(d: POIDeck) -> None:
         media_files.append(str(highlight_path))
         media_files.append(str(back_path))
 
-        # Info string
-        info_parts = []
-        if poi.elevation:
-            info_parts.append(f"{poi.elevation} m")
-        if poi.subtitle:
-            info_parts.append(poi.subtitle)
-        info_str = " · ".join(info_parts) if info_parts else ""
-
-        # Category label
-        cat_label = cat_labels.get(poi.category, poi.category)
+        tags = [poi.category]
+        if extra_tags:
+            tags.extend(extra_tags)
 
         note = genanki.Note(
             model=model,
             fields=[
                 poi.poi_id,
                 poi.name,
-                cat_label,
-                info_str,
-                basemap_html,
-                all_pois_html,
+                cat_labels.get(poi.category, poi.category),
+                _poi_info_str(poi),
+                layers["basemap_html"],
+                layers["all_pois_html"],
                 f'<img class="overlay" src="{highlight_file}">',
                 f'<img class="overlay" src="{back_file}">',
-                context_html,
+                layers["context_html"],
+                f'<img class="thumbnail" src="{thumbnail_file}">' if thumbnail_file else "",
             ],
-            tags=[poi.category],
+            tags=tags,
         )
-        anki_deck.add_note(note)
+        # Custom GUID to avoid Anki treating same POI in different
+        # subdecks as duplicates
+        if guid_prefix:
+            note.guid = genanki.guid_for(f"{guid_prefix}_{poi.poi_id}")
+
+        notes.append(note)
+
+    return notes, skipped
+
+
+# ─── Single POI deck (flat, no subdecks) ──────────────────────────────────────
+
+def generate_apkg_poi(d: POIDeck) -> None:
+    """Generate a ready-to-import .apkg file for a single flat POI deck.
+
+    Used when no POI_MULTI_DECK config is defined for this region.
+    """
+    _ensure_images(d)
+
+    today = date.today().isoformat()
+    region_label = d.region.name.capitalize()
+    system_label = d.poi_classification.title
+    deck_title = f"{region_label} {system_label} (Beta {today})"
+
+    base = f"peak_soaring_{d.name}"
+    model_id = int(hashlib.sha256(f"{base}_poi_model".encode()).hexdigest()[:8], 16)
+    deck_id = int(hashlib.sha256(f"{base}_poi_deck".encode()).hexdigest()[:8], 16)
+
+    model = _poi_model(model_id, f"{region_label} {system_label}")
+    anki_deck = genanki.Deck(deck_id, deck_title)
+    media_files: list[str] = []
+
+    layers = _collect_shared_layers(d, media_files)
+    if layers is None:
+        return
+
+    notes, skipped = _build_poi_notes(d, model, d.pois, layers, media_files)
+    for n in notes:
+        anki_deck.add_note(n)
 
     if skipped:
         print(f"\n[APKG-POI] WARNING: {skipped} POIs skipped (missing overlays).")
-        print("           Run:  python scripts/03b_generate_poi_cards.py "
-              f"--region {d.region.name} --system {d.poi_classification.name} "
-              "--force")
 
-    # ── Write .apkg ────────────────────────────────────────────────────────
-    apkg_path = d.output_csv_dir / f"{d.anki_csv_name}.apkg"
-    apkg_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_apkg(
+        d.output_csv_dir / f"{d.anki_csv_name}.apkg",
+        anki_deck, media_files,
+        label="APKG-POI", title=deck_title,
+    )
 
-    package = genanki.Package(anki_deck)
-    package.media_files = media_files
-    package.write_to_file(str(apkg_path))
 
-    n_notes = len(anki_deck.notes)
-    n_cards = n_notes * 2  # 2 templates
-    n_media = len(media_files)
-    size_mb = apkg_path.stat().st_size / (1024 * 1024)
-    print(f"\n[APKG-POI] {deck_title}")
-    print(f"[APKG-POI] {n_notes} notes x 2 templates = {n_cards} cards")
-    print(f"[APKG-POI] {n_media} media files, {size_mb:.1f} MB")
-    print(f"[APKG-POI] -> {apkg_path}")
-    print(f"\n  Import in Anki:  File -> Import -> {apkg_path.name}")
-    print(f"  Double-tap or pinch to zoom into the map.")
+# ─── Multi-deck POI — subdecks by sub-region + category ──────────────────────
+
+def generate_apkg_poi_multi(d: POIDeck, region_name: str) -> None:
+    """Build a single .apkg with multiple POI subdecks.
+
+    Structure (example for ostalpen):
+        Parent Title
+        ├── A Königsdorf    (zoomed sub-region, all POI types, with thumbnail)
+        ├── B Innsbruck     (zoomed sub-region, all POI types, with thumbnail)
+        ├── C Gipfel        (full map, peaks only)
+        ├── D Pässe         (full map, passes only)
+        ├── E Orte          (full map, towns only)
+        ├── F Täler         (full map, valleys only)
+        └── G Seen          (full map, lakes only)
+
+    Sub-region decks use their own zoomed basemap + overlays and show
+    a small thumbnail of the full Ostalpen map with a red rectangle.
+    Category decks use the full-region basemap and filter by POI type.
+    """
+    multi_key = f"{region_name}_pois"
+    multi_cfg = D.POI_MULTI_DECK.get(multi_key)
+    if not multi_cfg:
+        print(f"[APKG-POI] No multi-deck config for {multi_key}")
+        return
+
+    _ensure_images(d)
+
+    parent_title = multi_cfg["parent_title"]
+    base = f"peak_soaring_{multi_key}"
+    # Bump _MODEL_VER when fields or templates change to force Anki
+    # to create a fresh note-type on re-import (otherwise the old
+    # model is kept and new fields like Thumbnail are invisible).
+    _MODEL_VER = 2
+    model_id = int(hashlib.sha256(
+        f"{base}_multi_model_v{_MODEL_VER}".encode()
+    ).hexdigest()[:8], 16)
+    model = _poi_model(model_id, parent_title)
+
+    anki_subdecks: list = []
+    media_files: list[str] = []
+    media_set: set[str] = set()  # deduplicate media paths
+
+    def _add_media(path_str: str):
+        if path_str not in media_set:
+            media_set.add(path_str)
+            media_files.append(path_str)
+
+    # ── A) Sub-region subdecks (zoomed map + thumbnail) ──────────────────
+    for sub_key, sub_label in multi_cfg.get("sub_regions", []):
+        subdeck_title = f"{parent_title}::{sub_label}"
+        subdeck_id = int(hashlib.sha256(
+            f"{base}_{sub_label}_deck".encode()
+        ).hexdigest()[:8], 16)
+
+        anki_deck = genanki.Deck(subdeck_id, subdeck_title)
+
+        # Build sub-region POIDeck
+        sub_deck = D.get_sub_region_poi_deck(region_name, sub_key)
+        _ensure_images(sub_deck)
+
+        # Collect sub-region shared layers (zoomed basemap + overlays)
+        sub_media: list[str] = []
+        layers = _collect_shared_layers(sub_deck, sub_media)
+        if layers is None:
+            print(f"[APKG-POI] WARN: Skipping sub-region {sub_key} (missing layers)")
+            continue
+        for m in sub_media:
+            _add_media(m)
+
+        # Thumbnail: overview of full Ostalpen with red rect
+        thumb_file = f"{d.prefix}_thumb_{sub_key}.webp"
+        thumb_path = d.output_images_dir / thumb_file
+        if thumb_path.exists():
+            _add_media(str(thumb_path))
+        else:
+            print(f"[APKG-POI] WARN: Thumbnail not found: {thumb_file}")
+            thumb_file = ""
+
+        notes, skipped = _build_poi_notes(
+            sub_deck, model, sub_deck.pois, layers, media_files,
+            thumbnail_file=thumb_file,
+            guid_prefix=f"sub_{sub_key}",
+            extra_tags=[sub_key],
+        )
+        # Deduplicate media from notes
+        for n in notes:
+            anki_deck.add_note(n)
+
+        n = len(anki_deck.notes)
+        print(f"[APKG-POI]   {sub_label}: {n} notes ({len(sub_deck.pois)} POIs)")
+        anki_subdecks.append(anki_deck)
+
+    # ── B) Category subdecks (full map, filter by POI type) ──────────────
+    # Collect full-region shared layers once
+    full_media: list[str] = []
+    full_layers = _collect_shared_layers(d, full_media)
+    if full_layers is None:
+        print("[APKG-POI] ERROR: Cannot build category decks (missing layers)")
+        return
+    for m in full_media:
+        _add_media(m)
+
+    for cat_key, cat_label in multi_cfg.get("categories", []):
+        subdeck_title = f"{parent_title}::{cat_label}"
+        subdeck_id = int(hashlib.sha256(
+            f"{base}_{cat_label}_deck".encode()
+        ).hexdigest()[:8], 16)
+
+        anki_deck = genanki.Deck(subdeck_id, subdeck_title)
+
+        cat_pois = d.poi_classification.pois_by_category(cat_key)
+        if not cat_pois:
+            print(f"[APKG-POI]   {cat_label}: 0 POIs (skipped)")
+            continue
+
+        notes, skipped = _build_poi_notes(
+            d, model, cat_pois, full_layers, media_files,
+            thumbnail_file="",  # no thumbnail for full-map decks
+            guid_prefix=f"cat_{cat_key}",
+            extra_tags=[cat_key],
+        )
+        for n in notes:
+            anki_deck.add_note(n)
+
+        n = len(anki_deck.notes)
+        print(f"[APKG-POI]   {cat_label}: {n} notes")
+        anki_subdecks.append(anki_deck)
+
+    _write_apkg(
+        d.output_csv_dir / f"{d.anki_csv_name}.apkg",
+        anki_subdecks, media_files,
+        label="APKG-POI", title=parent_title,
+    )
 
 
 def main():
@@ -775,8 +831,18 @@ def main():
             sys.exit(0)
 
     if isinstance(d, POIDeck):
-        print(f"=== Building POI APKG for: {d.title} ===\n")
-        generate_apkg_poi(d)
+        # Check for multi-deck config
+        multi_key = f"{args.region}_pois"
+        if multi_key in D.POI_MULTI_DECK:
+            cfg = D.POI_MULTI_DECK[multi_key]
+            labels = [lbl for _, lbl in cfg.get("sub_regions", [])] + \
+                     [lbl for _, lbl in cfg.get("categories", [])]
+            print(f"=== Building multi-deck POI APKG "
+                  f"({len(labels)} subdecks) for: {d.title} ===\n")
+            generate_apkg_poi_multi(d, args.region)
+        else:
+            print(f"=== Building POI APKG for: {d.title} ===\n")
+            generate_apkg_poi(d)
     elif merge_key:
         labels = " + ".join(lbl for _, lbl in D.SUBDECK_MERGE[merge_key])
         print(f"=== Building combined APKG ({labels}) for: {d.title} ===\n")

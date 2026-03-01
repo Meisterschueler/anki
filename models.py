@@ -3,7 +3,7 @@ Shared data models for all Alpine decks.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import List, Optional
 
 
 @dataclass
@@ -18,12 +18,12 @@ class Gebirgsgruppe:
 
 @dataclass
 class POI:
-    """One point-of-interest entry (peak, pass, valley, town)."""
+    """One point-of-interest entry (peak, pass, valley, town, lake)."""
     poi_id: str             # Unique ID, e.g. "peak_01", "pass_03"
     name: str               # Display name, e.g. "Zugspitze"
-    category: str           # "peak", "pass", "valley", "town"
+    category: str           # "peak", "pass", "valley", "town", "lake"
     lat: float              # WGS84 latitude
     lon: float              # WGS84 longitude
     elevation: Optional[int] = None   # Metres (peaks, passes)
     subtitle: Optional[str] = None    # e.g. "Mittagsspitze" for Hirschberg
-    tags: list = field(default_factory=list)  # Anki tags for filtering
+    tags: List[str] = field(default_factory=list)  # Anki tags for filtering

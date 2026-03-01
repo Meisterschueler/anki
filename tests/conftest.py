@@ -37,7 +37,7 @@ def image_dir(deck):
 @pytest.fixture
 def basemap_layers_dir(deck):
     """Path to the deck's basemap layers subdirectory."""
-    return deck.output_images_dir / "_basemap_layers"
+    return deck.output_images_dir / "_basemap_layers" / deck.prefix
 
 
 @pytest.fixture
