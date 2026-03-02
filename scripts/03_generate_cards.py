@@ -42,6 +42,7 @@ _bm = import_module("02_generate_basemap")
 create_figure = _bm.create_figure
 render_full_basemap = _bm.render_full_basemap
 generate_raster_basemap = _bm.generate_raster_basemap
+generate_raster_basemap_rot = _bm.generate_raster_basemap_rot
 render_polygons_colored = _bm.render_polygons_colored
 render_single_polygon = _bm.render_single_polygon
 render_parent_polygon = _bm.render_parent_polygon
@@ -101,6 +102,10 @@ def _generate_basemap(d: Deck, force: bool = False) -> None:
     """Generate the shared basemap WebP using the fast raster pipeline."""
     basemap_path = d.output_images_dir / d.filename_basemap()
     generate_raster_basemap(d, basemap_path, force=force)
+
+    # Rotated basemap (hillshade azimuth 135°) for the Drehen button
+    basemap_rot_path = d.output_images_dir / d.filename_basemap_rot()
+    generate_raster_basemap_rot(d, basemap_rot_path, force=force)
 
 
 # ─── Partition Map (Einteilung) ─────────────────────────────────────────────

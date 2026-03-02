@@ -48,8 +48,11 @@ _bm = import_module("02_generate_basemap")
 create_figure = _bm.create_figure
 render_full_basemap = _bm.render_full_basemap
 generate_raster_basemap = _bm.generate_raster_basemap
+generate_raster_basemap_rot = _bm.generate_raster_basemap_rot
 crop_basemap_from_parent = _bm.crop_basemap_from_parent
 _compute_pixel_dims = _bm._compute_pixel_dims
+_draw_compass_needle = _bm._draw_compass_needle
+_resolve_osm_file = _bm._resolve_osm_file
 render_country_borders = _bm.render_country_borders
 render_cities = _bm.render_cities
 
@@ -71,12 +74,7 @@ def _get_valley_polygons(d: POIDeck) -> dict:
     key = str(d.region.osm_valleys_geojson)
     if key not in _VALLEY_POLY_CACHE:
         polygons: dict = {}
-        path = Path(key)
-        if not path.exists():
-            # Fallback: output/data/osm/ mirror
-            alt = D.PROJECT_ROOT / "output" / "data" / "osm" / path.name
-            if alt.exists():
-                path = alt
+        path = _resolve_osm_file(d.region.osm_valleys_geojson)
         if path.exists():
             import geopandas as gpd
             gdf = gpd.read_file(path)
@@ -373,7 +371,7 @@ def generate_all(d: POIDeck, pois=None, force=False):
     if pois is None:
         pois = d.pois
 
-    _generate_basemap(d, force=False)
+    _generate_basemap(d, force=force)
 
     # context + all_pois + 2 per POI (highlight + back)
     total = 2 + 2 * len(pois)
@@ -527,22 +525,47 @@ def generate_all_sub_regions(
         # Try normal pipeline first; fall back to cropping from parent
         # basemap when the DEM is unavailable.
         sub_bm_path = sub_deck.output_images_dir / sub_deck.filename_basemap()
+        sub_bm_rot_path = sub_deck.output_images_dir / sub_deck.filename_basemap_rot()
         if force or not sub_bm_path.exists():
             if sub_deck.region.dem_tif.exists():
                 _generate_basemap(sub_deck, force=force)
             else:
-                parent_bm = parent_deck.output_images_dir / parent_deck.filename_basemap()
                 tw, th = _compute_pixel_dims(sub_deck)
                 parent_ext = (parent_deck.bbox_west, parent_deck.bbox_east,
                               parent_deck.bbox_south, parent_deck.bbox_north)
                 sub_ext = (sub_deck.bbox_west, sub_deck.bbox_east,
                            sub_deck.bbox_south, sub_deck.bbox_north)
+                parent_bm = parent_deck.output_images_dir / parent_deck.filename_basemap()
                 crop_basemap_from_parent(
                     parent_bm, parent_ext, sub_ext,
                     sub_bm_path, tw, th,
                 )
+                # Rotated basemap: crop from parent rotated basemap
+                parent_bm_rot = parent_deck.output_images_dir / parent_deck.filename_basemap_rot()
+                crop_basemap_from_parent(
+                    parent_bm_rot, parent_ext, sub_ext,
+                    sub_bm_rot_path, tw, th,
+                    north_up=False,
+                )
         else:
             print(f"[BASEMAP] Already exists: {sub_bm_path.name}")
+            # Still ensure rotated basemap exists
+            if force or not sub_bm_rot_path.exists():
+                if sub_deck.region.dem_tif.exists():
+                    generate_raster_basemap_rot(sub_deck, sub_bm_rot_path,
+                                                force=force)
+                else:
+                    tw, th = _compute_pixel_dims(sub_deck)
+                    parent_ext = (parent_deck.bbox_west, parent_deck.bbox_east,
+                                  parent_deck.bbox_south, parent_deck.bbox_north)
+                    sub_ext = (sub_deck.bbox_west, sub_deck.bbox_east,
+                               sub_deck.bbox_south, sub_deck.bbox_north)
+                    parent_bm_rot = parent_deck.output_images_dir / parent_deck.filename_basemap_rot()
+                    crop_basemap_from_parent(
+                        parent_bm_rot, parent_ext, sub_ext,
+                        sub_bm_rot_path, tw, th,
+                        north_up=False,
+                    )
 
         # Generate all overlay images for the sub-region deck
         # (skip basemap — already handled above)

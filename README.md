@@ -41,7 +41,7 @@ Einzelnes Template „Gebirgsgruppe" mit Toggle-Buttons:
 - **Vorderseite**: Reliefkarte mit rotem Fragezeichen im Gruppenpolygon
   + „▦ Einteilung"-Button (blendet farbige Gesamteinteilung ein)
   + „▦ Kontext"-Button (blendet Ländergrenzen + Städtenamen ein)
-  + „↻ Drehen"-Button (dreht alle Layer um 180° — erhöht Schwierigkeit)
+  + „↻ Drehen“-Button (dreht Karte um 180° mit korrektem Schattenfall — erhöht Schwierigkeit)
 - **Rückseite**: Name + Gruppen-ID + höchster Gipfel,
   Reliefkarte mit farbigem Polygon (+ Parent-Polygon bei hierarchischen Systemen)
   + gleiche Toggle-Buttons
@@ -86,7 +86,8 @@ Jede Karte referenziert diese Bilder (alle `.webp`):
 
 | Layer | CSS-Klasse | Dateinamenbeispiel | Inhalt | Sichtbarkeit |
 |-------|------------|--------------------|--------|--------------|
-| **Basemap** | `basemap` | `ps_ostalpen_ave84_basemap.webp` | Hillshade-Relief + Gewässer | Immer sichtbar |
+| **Basemap** | `basemap` | `ps_ostalpen_ave84_basemap.webp` | Hillshade-Relief + Gewässer (Azimut 315°) + Kompassnadel N↑ | Immer sichtbar |
+| **BasemapRot** | `basemap-rot` | `ps_ostalpen_ave84_basemap_rot.webp` | Hillshade-Relief + Gewässer (Azimut 135°), vorrotiert (Süd-oben) + Kompassnadel N↓ | Versteckt, per Drehen-Button einblendbar |
 | **Partition** | `overlay partition` | `ps_ostalpen_ave84_partition.webp` | Alle Gruppen farbig + IDs | Versteckt, per Button einblendbar |
 | **Context** | `overlay context` | `ps_ostalpen_ave84_context.webp` | Ländergrenzen + Städtenamen | Versteckt, per Button einblendbar |
 | **FrontOverlay** | `overlay` | `ps_ostalpen_ave84_group_3b_front.webp` | Rotes Fragezeichen im Polygon | Nur Vorderseite |
@@ -96,12 +97,13 @@ Jede Karte referenziert diese Bilder (alle `.webp`):
 
 | Layer | CSS-Klasse | Dateinamenbeispiel | Inhalt | Sichtbarkeit |
 |-------|------------|--------------------|--------|--------------|
-| **Basemap** | `basemap` | `ps_ostalpen_pois_basemap.webp` | Hillshade-Relief + Gewässer | Immer sichtbar |
+| **Basemap** | `basemap` | `ps_ostalpen_pois_basemap.webp` | Hillshade-Relief + Gewässer (Azimut 315°) + Kompassnadel N↑ | Immer sichtbar |
+| **BasemapRot** | `basemap-rot` | `ps_ostalpen_pois_basemap_rot.webp` | Hillshade-Relief + Gewässer (Azimut 135°), vorrotiert (Süd-oben) + Kompassnadel N↓ | Versteckt, per Drehen-Button einblendbar |
 | **AllPois** | `overlay allpois` | `ps_ostalpen_pois_all_pois.webp` | Alle POI-Marker + Labels | Versteckt, per Button einblendbar |
 | **Highlight** | `overlay` | `ps_ostalpen_pois_poi_peak_01_highlight.webp` | Roter Kreis / Polygon am Ziel-POI | Nur Vorderseite |
 | **BackOverlay** | `overlay` | `ps_ostalpen_pois_poi_peak_01_back.webp` | Roter Kreis am Ziel (Rückseite) | Nur Rückseite |
 | **Context** | `overlay context` | `ps_ostalpen_pois_context.webp` | Ländergrenzen + Städtenamen | Versteckt, per Button einblendbar |
-| **Thumbnail** | `thumbnail` | `ps_ostalpen_pois_thumb_koenigsdorf.webp` | Übersichtskarte mit rotem Rechteck | Nur bei Sub-Region-Decks (konditional) |
+| **Thumbnail** | `thumbnail` | `ps_ostalpen_pois_thumb_koenigsdorf.webp` | Übersichtskarte mit rotem Rechteck + Kompassnadel N↑ | Nur bei Sub-Region-Decks (konditional) |
 
 ### CSS-Compositing in Anki
 
@@ -113,6 +115,9 @@ Jede Karte referenziert diese Bilder (alle `.webp`):
 .card-map img.basemap {
     display: block;           /* unterste Ebene, definiert die Kartengröße */
 }
+.card-map img.basemap-rot {
+    display: none;            /* gedrehte Basemap, per Drehen-Button einblendbar */
+}
 .card-map img.overlay {
     position: absolute;       /* pixelgenau über der Basemap */
     top: 0; left: 0;
@@ -120,35 +125,42 @@ Jede Karte referenziert diese Bilder (alle `.webp`):
 }
 ```
 
-Partition, AllPois und Context sind per CSS standardmäßig `display: none` und werden
+Partition, AllPois, Context und BasemapRot sind per CSS standardmäßig `display: none` und werden
 über JavaScript-Toggle-Buttons (`sessionStorage`-persistent) ein-/ausgeblendet.
+Der Drehen-Button tauscht Basemap ↔ BasemapRot und rotiert alle Overlay-Layer um 180°.
+BasemapRot und Thumbnail werden **nicht** CSS-rotiert — BasemapRot ist bereits als
+Süd-oben-Bild vorrotiert gespeichert, das Thumbnail zeigt immer Norden oben.
+So bleibt die Schattenrichtung des Hillshade korrekt (Lichtquelle immer von Nordwesten).
+Alle Basemaps und das Thumbnail enthalten eine eingebrannte Kompassnadel (N↑ bzw. N↓).
 Das Thumbnail ist per `{{#Thumbnail}}…{{/Thumbnail}}` (Mustache-Konditional) nur vorhanden,
 wenn das Feld befüllt ist.
 
 ### Anki-Datenmodell
 
-**Gebirgsgruppen-Modell** — 8 Felder:
+**Gebirgsgruppen-Modell** — 9 Felder:
 
 | Feld | Typ | Beschreibung |
-|------|-----|-------------|
+|------|-----|-----------|
 | `Group_ID` | Text | Gruppen-ID (z.B. `3b`, `SZ.5`) |
 | `Name` | Text | Gruppenname |
 | `Hoechster_Gipfel` | Text | Höchster Gipfel mit Höhe |
 | `Basemap` | HTML | `<img class="basemap" src="…">` |
+| `BasemapRot` | HTML | `<img class="basemap-rot" src="…">` |
 | `FrontOverlay` | HTML | `<img class="overlay" src="…">` |
 | `BackOverlay` | HTML | `<img class="overlay" src="…">` |
 | `Partition` | HTML | `<img class="overlay partition" src="…">` |
 | `Context` | HTML | `<img class="overlay context" src="…">` |
 
-**POI-Modell** — 10 Felder:
+**POI-Modell** — 11 Felder:
 
 | Feld | Typ | Beschreibung |
-|------|-----|-------------|
+|------|-----|-----------|
 | `POI_ID` | Text | Eindeutige ID (z.B. `peak_01`) |
 | `Name` | Text | Anzeigename (z.B. `Zugspitze`) |
 | `Category` | Text | Kategorie-Label (z.B. `Gipfel`) |
 | `Info` | Text | Höhe + Untertitel (z.B. `2962 m`) |
 | `Basemap` | HTML | `<img class="basemap" src="…">` |
+| `BasemapRot` | HTML | `<img class="basemap-rot" src="…">` |
 | `AllPois` | HTML | `<img class="overlay allpois" src="…">` |
 | `Highlight` | HTML | `<img class="overlay" src="…">` |
 | `BackOverlay` | HTML | `<img class="overlay" src="…">` |
@@ -163,6 +175,14 @@ Die opake Basemap wird als reines Raster (numpy / rasterio / Pillow) gerendert:
 2. **Hillshade** — Azimut 315°, Altitude 45°, vertikale Überhöhung 0.05, Soft-Blending
 3. **Gewässer** — Flüsse (blau, ≥ 20 km) + Seen (gefüllt, ≥ 1 km²) aus OSM-GeoJSON
 4. **Ozean** — Fläche außerhalb des Festlands in `#c6ddf0`
+5. **Gedrehte Basemap** — zweite Variante mit Hillshade-Azimut 135° (= 315° − 180°).
+   Das Bild wird nach dem Compositing mit PIL um 180° rotiert (Süd-oben) gespeichert.
+   In Anki wird es direkt angezeigt (ohne CSS-Rotation) — der Drehen-Button
+   tauscht Basemap ↔ BasemapRot und rotiert nur die Overlays per CSS.
+6. **Kompassnadel** — in jede Basemap und jedes Thumbnail wird eine Kompassnadel
+   (rot = Nord, weiß = Süd) mit „N“-Label in die rechte obere Ecke eingebrannt.
+   Normale Basemaps: N↑ (Norden oben). Gedrehte Basemaps: N↓ (Süden oben).
+   Größe: 2% der kurzen Bildkante, Margin: 1.5%.
 
 Höhen > 4200 m werden gekappt. Projektion: PlateCarree (WGS 84).
 
@@ -172,12 +192,14 @@ Alle Bilddateien folgen dem Schema `ps_{region}_{system}_{layer}.webp`:
 
 ```
 ps_ostalpen_ave84_basemap.webp
+ps_ostalpen_ave84_basemap_rot.webp
 ps_ostalpen_ave84_partition.webp
 ps_ostalpen_ave84_context.webp
 ps_ostalpen_ave84_group_{id}_front.webp
 ps_ostalpen_ave84_group_{id}_back.webp
 
 ps_ostalpen_pois_basemap.webp
+ps_ostalpen_pois_basemap_rot.webp
 ps_ostalpen_pois_all_pois.webp
 ps_ostalpen_pois_context.webp
 ps_ostalpen_pois_poi_{poi_id}_highlight.webp

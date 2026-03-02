@@ -141,7 +141,10 @@ def _layer_dir(d: Deck) -> Path:
 # Layer 1: Hillshade + ocean mask  (RGB PNG, opaque)
 # ---------------------------------------------------------------------------
 
-def _render_hillshade_layer(d: Deck, layer_path: Path, force: bool = False) -> None:
+def _render_hillshade_layer(
+    d: Deck, layer_path: Path, force: bool = False,
+    *, azimuth: float = D.HILLSHADE_AZIMUTH,
+) -> None:
     """Windowed DEM read -> hillshade -> ocean mask -> save RGB PNG."""
     import rasterio
     from rasterio.enums import Resampling
@@ -191,7 +194,7 @@ def _render_hillshade_layer(d: Deck, layer_path: Path, force: bool = False) -> N
     print(f"[HILLSHADE] DEM read: {dem.shape[1]}x{dem.shape[0]} "
           f"(from {src_w}x{src_h}, buf={HS_BUF}px)")
 
-    ls = LightSource(azdeg=D.HILLSHADE_AZIMUTH, altdeg=D.HILLSHADE_ALTITUDE)
+    ls = LightSource(azdeg=azimuth, altdeg=D.HILLSHADE_ALTITUDE)
     rgb_buf = ls.shade(
         np.clip(dem, 0, D.MAX_HILLSHADE_ELEVATION),
         cmap=_TERRAIN_CMAP,
@@ -336,6 +339,103 @@ def _render_rivers_layer(d: Deck, layer_path: Path, force: bool = False) -> None
 
 
 # ---------------------------------------------------------------------------
+# Compass needle  (burned into basemap & thumbnail)
+# ---------------------------------------------------------------------------
+
+def _draw_compass_needle(img, north_up: bool = True):
+    """Draw a compass needle in the top-right corner of a Pillow Image.
+
+    Args:
+        img: PIL Image (RGB or RGBA). Modified in-place AND returned.
+        north_up: True → red tip points up (N ↑).
+                  False → red tip points down (N ↓), for south-up basemaps.
+
+    Returns the modified Image.
+    """
+    import math
+    from PIL import Image, ImageDraw, ImageFont
+
+    w, h = img.size
+    short = min(w, h)
+
+    # Needle radius and position
+    r = max(18, int(short * D.COMPASS_RADIUS_RATIO))
+    margin = max(10, int(short * D.COMPASS_MARGIN_RATIO))
+    cx = w - margin - r          # center x (from right edge)
+    cy = margin + r              # center y (from top edge)
+
+    # --- Background circle (semi-transparent white) ---
+    overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    odraw = ImageDraw.Draw(overlay)
+    bg_r = int(r * 1.45)        # background circle slightly larger
+    odraw.ellipse(
+        [cx - bg_r, cy - bg_r, cx + bg_r, cy + bg_r],
+        fill=(255, 255, 255, D.COMPASS_BG_ALPHA),
+        outline=D.COMPASS_OUTLINE_COLOR,
+        width=max(1, r // 12),
+    )
+
+    # --- Needle (two triangles: north half = red, south half = white) ---
+    # needle_len = distance from center to tip
+    needle_len = int(r * 0.92)
+    half_w = max(2, int(r * 0.28))    # half-width at center
+
+    if north_up:
+        # Red triangle: tip at top
+        north_tri = [(cx, cy - needle_len),
+                     (cx - half_w, cy),
+                     (cx + half_w, cy)]
+        # White triangle: tip at bottom
+        south_tri = [(cx, cy + needle_len),
+                     (cx - half_w, cy),
+                     (cx + half_w, cy)]
+    else:
+        # South-up: red tip points down
+        north_tri = [(cx, cy + needle_len),
+                     (cx - half_w, cy),
+                     (cx + half_w, cy)]
+        south_tri = [(cx, cy - needle_len),
+                     (cx - half_w, cy),
+                     (cx + half_w, cy)]
+
+    n_col = tuple(int(D.COMPASS_NORTH_COLOR.lstrip("#")[i:i+2], 16) for i in (0, 2, 4))
+    s_col = tuple(int(D.COMPASS_SOUTH_COLOR.lstrip("#")[i:i+2], 16) for i in (0, 2, 4))
+    ol_col = D.COMPASS_OUTLINE_COLOR
+    ol_w = max(1, r // 15)
+
+    odraw.polygon(north_tri, fill=(*n_col, 255), outline=ol_col, width=ol_w)
+    odraw.polygon(south_tri, fill=(*s_col, 255), outline=ol_col, width=ol_w)
+
+    # --- "N" label ---
+    font_size = max(8, int(r * 0.55))
+    try:
+        font = ImageFont.truetype(D.COMPASS_FONT, font_size)
+    except OSError:
+        try:
+            font = ImageFont.truetype("arial.ttf", font_size)
+        except OSError:
+            font = ImageFont.load_default()
+
+    label_y = cy - needle_len - font_size - max(1, r // 8) if north_up \
+        else cy + needle_len + max(1, r // 8)
+    # Center the "N" horizontally
+    bbox_n = odraw.textbbox((0, 0), "N", font=font)
+    tw = bbox_n[2] - bbox_n[0]
+    label_x = cx - tw // 2
+    odraw.text((label_x, label_y), "N", fill=(*n_col, 255), font=font,
+               stroke_width=max(1, font_size // 10),
+               stroke_fill=(255, 255, 255, 220))
+
+    # Composite overlay onto image
+    if img.mode != "RGBA":
+        img = img.convert("RGBA")
+        result = Image.alpha_composite(img, overlay)
+        return result.convert("RGB")
+    else:
+        return Image.alpha_composite(img, overlay)
+
+
+# ---------------------------------------------------------------------------
 # Sub-region fallback: crop parent basemap when DEM is unavailable
 # ---------------------------------------------------------------------------
 
@@ -346,11 +446,19 @@ def crop_basemap_from_parent(
     output_path: Path,
     target_w: int,
     target_h: int,
+    north_up: bool = True,
 ) -> bool:
     """Crop the parent basemap to *sub_extent* and resize to target dims.
 
     Uses approximate linear geo-to-pixel mapping (adequate for small
     sub-regions within the same basemap).  Returns True on success.
+
+    When *north_up* is False the parent image is assumed to be stored
+    south-up (rotated 180°).  Pixel coordinates are flipped accordingly
+    so the crop region maps to the correct geography.
+
+    A compass needle is burned into the result (north-up or south-up
+    depending on *north_up*).
 
     Args:
         parent_basemap_path: Path to the full-region basemap WebP.
@@ -359,6 +467,7 @@ def crop_basemap_from_parent(
         output_path: Where to save the cropped basemap WebP.
         target_w: Target pixel width.
         target_h: Target pixel height.
+        north_up: True for normal basemap, False for south-up rotated.
     """
     from PIL import Image
 
@@ -383,6 +492,20 @@ def crop_basemap_from_parent(
     x1 = max(0, min(pw, x1))
     y0 = max(0, min(ph, y0))
     y1 = max(0, min(ph, y1))
+
+    if x1 <= x0 or y1 <= y0:
+        print(f"[BASEMAP-CROP] ERROR: Crop region is empty "
+              f"({x0},{y0})-({x1},{y1})")
+        return False
+
+    # For south-up source images the pixel grid is flipped 180°
+    if not north_up:
+        x0, x1 = pw - x1, pw - x0
+        y0, y1 = ph - y1, ph - y0
+        x0 = max(0, min(pw, x0))
+        x1 = max(0, min(pw, x1))
+        y0 = max(0, min(ph, y0))
+        y1 = max(0, min(ph, y1))
 
     if x1 <= x0 or y1 <= y0:
         print(f"[BASEMAP-CROP] ERROR: Crop region is empty "
@@ -477,9 +600,97 @@ def generate_raster_basemap(
     print(f"[BASEMAP] Done: {output_path.name} ({size_kb:,.0f} KB, {w_px}x{h_px} px)")
 
 
+def generate_raster_basemap_rot(
+    d: Deck,
+    output_path: Path,
+    force: bool = False,
+) -> None:
+    """Render a rotated basemap (hillshade azimuth 135°).
+
+    Reuses the cached lakes/rivers/ocean-mask layers from the normal
+    basemap build — only the hillshade is re-rendered with flipped azimuth.
+    The final image is rotated 180° (south-up) and saved with a compass
+    needle pointing south.  In Anki the image is displayed as-is (no CSS
+    rotation needed) — the Drehen button simply swaps basemap ↔ basemap_rot.
+    """
+    from PIL import Image
+
+    if not force and output_path.exists():
+        size_kb = output_path.stat().st_size / 1024
+        print(f"[BASEMAP-ROT] Already exists: {output_path.name} ({size_kb:,.0f} KB)")
+        return
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    layers = _layer_dir(d)
+
+    # Rotated hillshade gets its own cached file
+    hs_rot_path = layers / "hillshade_rot.png"
+    _render_hillshade_layer(d, hs_rot_path, force=force,
+                            azimuth=D.HILLSHADE_AZIMUTH_ROT)
+
+    if not hs_rot_path.exists():
+        print("[BASEMAP-ROT] Hillshade (rot) could not be generated — "
+              "DEM missing.  Run 01_download_data.py first.")
+        return
+
+    # Reuse lakes, rivers, ocean mask from the normal basemap build
+    lk_path = layers / "lakes.png"
+    rv_path = layers / "rivers.png"
+
+    if not lk_path.exists() or not rv_path.exists():
+        print("[BASEMAP-ROT] lakes/rivers layers missing — "
+              "run normal basemap generation first.")
+        return
+
+    # Composite (same logic as generate_raster_basemap)
+    base = Image.open(str(hs_rot_path)).convert("RGBA")
+    lake_layer = Image.open(str(lk_path))
+    river_layer = Image.open(str(rv_path))
+
+    lake_a = np.array(lake_layer)[:, :, 3]
+    river_arr = np.array(river_layer)
+    river_arr[:, :, 3] = np.where(lake_a > 0, 0, river_arr[:, :, 3])
+
+    ocean_mask_path = layers / "ocean_mask.png"
+    if ocean_mask_path.exists():
+        ocean_mask = np.array(Image.open(str(ocean_mask_path)))
+        river_arr[:, :, 3] = np.where(ocean_mask > 0, 0, river_arr[:, :, 3])
+
+    river_layer = Image.fromarray(river_arr, "RGBA")
+
+    base = Image.alpha_composite(base, lake_layer)
+    base = Image.alpha_composite(base, river_layer)
+
+    final = base.convert("RGB")
+    # Rotate 180° so the image is stored south-up
+    final = final.transpose(Image.Transpose.ROTATE_180)
+    final.save(str(output_path), "WEBP", quality=D.BASEMAP_WEBP_QUALITY, method=6)
+
+    size_kb = output_path.stat().st_size / 1024
+    w_px, h_px = _compute_pixel_dims(d)
+    print(f"[BASEMAP-ROT] Done: {output_path.name} "
+          f"({size_kb:,.0f} KB, {w_px}x{h_px} px)")
+
+
 # ===========================================================================
 # COUNTRY BORDERS (OSM)
 # ===========================================================================
+
+def _resolve_osm_file(path: Path) -> Path:
+    """Return *path* if it exists, otherwise try ``output/data/osm/`` mirror.
+
+    The canonical location configured in ``DATA_DIR_OSM`` is ``data/osm/``,
+    but older runs may have stored the GeoJSON files under
+    ``output/data/osm/``.  This helper keeps both locations working.
+    """
+    if path.exists():
+        return path
+    alt = D.PROJECT_ROOT / "output" / "data" / "osm" / path.name
+    if alt.exists():
+        print(f"[OSM] Fallback: {path.name} found in output/data/osm/")
+        return alt
+    return path          # let callers handle the missing-file warning
+
 
 _osm_border_cache: dict = {}
 
@@ -490,9 +701,9 @@ def _load_osm_borders(d: Deck) -> gpd.GeoDataFrame:
     if key in _osm_border_cache:
         return _osm_border_cache[key]
 
-    fp = d.osm_borders_geojson
+    fp = _resolve_osm_file(d.osm_borders_geojson)
     if not fp.exists():
-        print(f"[WARN] OSM borders not found: {fp}")
+        print(f"[WARN] OSM borders not found: {d.osm_borders_geojson}")
         _osm_border_cache[key] = gpd.GeoDataFrame()
         return _osm_border_cache[key]
 
@@ -522,9 +733,9 @@ def _load_osm_lakes(d: Deck) -> gpd.GeoDataFrame:
     if key in _osm_lake_cache:
         return _osm_lake_cache[key]
 
-    fp = d.osm_lakes_geojson
+    fp = _resolve_osm_file(d.osm_lakes_geojson)
     if not fp.exists():
-        print(f"[WARN] OSM lakes not found: {fp}")
+        print(f"[WARN] OSM lakes not found: {d.osm_lakes_geojson}")
         _osm_lake_cache[key] = gpd.GeoDataFrame()
         return _osm_lake_cache[key]
 
@@ -557,9 +768,9 @@ def _load_osm_rivers(d: Deck) -> gpd.GeoDataFrame:
     if key in _osm_river_cache:
         return _osm_river_cache[key]
 
-    fp = d.osm_rivers_geojson
+    fp = _resolve_osm_file(d.osm_rivers_geojson)
     if not fp.exists():
-        print(f"[WARN] OSM rivers not found: {fp}")
+        print(f"[WARN] OSM rivers not found: {d.osm_rivers_geojson}")
         _osm_river_cache[key] = gpd.GeoDataFrame()
         return _osm_river_cache[key]
 
@@ -638,10 +849,11 @@ def load_polygons(d: Deck) -> gpd.GeoDataFrame:
     key = str(d.osm_geojson)
     if key in _gdf_cache:
         return _gdf_cache[key]
-    if not d.osm_geojson.exists():
+    fp = _resolve_osm_file(d.osm_geojson)
+    if not fp.exists():
         print(f"[WARN] GeoJSON not found: {d.osm_geojson}")
         return gpd.GeoDataFrame()
-    gdf = gpd.read_file(str(d.osm_geojson))
+    gdf = gpd.read_file(str(fp))
     _gdf_cache[key] = gdf
     return gdf
 
@@ -896,12 +1108,25 @@ def render_question_mark(ax, d: Deck, ref) -> None:
 # ===========================================================================
 
 def render_cities(ax, d: Deck) -> None:
+    # Scale label offsets proportionally to the map extent so that
+    # sub-region (zoomed-in) maps get the same visual label distance
+    # as the parent region.  The raw dx/dy values are authored for
+    # the reference extents (~7.8° wide, ~3.4° tall for ostalpen);
+    # here we normalise to a fixed fraction of the actual extent.
+    map_w = d.bbox_east - d.bbox_west
+    map_h = d.bbox_north - d.bbox_south
+    off_x = 0.0065 * map_w          # ~0.65 % of width
+    off_y = 0.006  * map_h           # ~0.60 % of height
+
     for name, lon, lat, dx, dy in d.cities:
         ax.plot(lon, lat, marker="o", markersize=3.5,
                 color="black", markeredgecolor="black",
                 transform=ccrs.PlateCarree(), zorder=9)
+        # Use sign of dx/dy for direction, but fixed magnitude
+        sdx = off_x if dx >= 0 else -off_x
+        sdy = off_y if dy >= 0 else -off_y
         ha = "left" if dx >= 0 else "right"
-        ax.text(lon + dx, lat + dy, name,
+        ax.text(lon + sdx, lat + sdy, name,
                 transform=ccrs.PlateCarree(), fontsize=8,
                 color="black", ha=ha, va="bottom", zorder=9)
 

@@ -96,9 +96,38 @@ _BASE_CSS = """\
 .hint-btn:hover {
     background: rgba(212,230,241,0.95);
 }
+.compass-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.78);
+    border: 1px solid #aaa;
+    cursor: pointer;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.3s ease;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+    line-height: 0;
+    padding: 0;
+}
+.compass-btn:hover {
+    background: rgba(255,255,255,0.95);
+}
+.compass-btn svg {
+    width: 34px;
+    height: 38px;
+}
 """
 
 _APKG_CSS = _BASE_CSS + """\
+.card-map img.basemap-rot {
+    display: none;
+}
 .card-map img.partition,
 .card-map img.context {
     display: none;
@@ -112,14 +141,15 @@ _APKG_CSS = _BASE_CSS + """\
 _TMPL_FRONT = """\
 <div class="card-map">
 {{Basemap}}
+{{BasemapRot}}
 {{Partition}}
 {{Context}}
 {{FrontOverlay}}
 <button class="hint-btn" onclick="var i=this.parentNode.querySelector('img.partition');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\u2716 Einteilung':'\u25a6 Einteilung';sessionStorage.setItem('ps_et',v?'1':'0');">&#9638; Einteilung</button>
 <button class="hint-btn" style="left:110px;" onclick="var i=this.parentNode.querySelector('img.context');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\u2716 Kontext':'\u25a6 Kontext';sessionStorage.setItem('ps_ctx',v?'1':'0');">&#9638; Kontext</button>
-<button class="hint-btn" style="left:200px;" onclick="var imgs=this.parentNode.querySelectorAll('img');var r=imgs[0]&&imgs[0].style.transform==='rotate(180deg)';imgs.forEach(function(i){i.style.transform=r?'':'rotate(180deg)';});this.textContent=r?'\u21BB Drehen':'\u2716 Drehen';sessionStorage.setItem('ps_rot',r?'0':'1');">&#8635; Drehen</button>
+<div class="compass-btn" onclick="var c=this.parentNode;var bm=c.querySelector('img.basemap');var br=c.querySelector('img.basemap-rot');var r=bm&&bm.style.display==='none';if(bm)bm.style.display=r?'':'none';if(br)br.style.display=r?'':'block';c.querySelectorAll('img:not(.basemap):not(.basemap-rot):not(.thumbnail)').forEach(function(i){i.style.transform=r?'':'rotate(180deg)';});this.style.transform=r?'':'rotate(180deg)';sessionStorage.setItem('ps_rot',r?'0':'1');"><svg viewBox="0 0 40 48"><polygon points="20,2 8,28 20,22" fill="none" stroke="#333" stroke-width="1.8" stroke-linejoin="round"/><polygon points="20,2 32,28 20,22" fill="#333" stroke="#333" stroke-width="1.8" stroke-linejoin="round"/><text x="20" y="44" text-anchor="middle" font-size="14" font-weight="bold" fill="#333" font-family="sans-serif">N</text></svg></div>
 </div>
-<script>(function(){var c=document.querySelector('.card-map');if(!c)return;var bs=c.querySelectorAll('.hint-btn');if(sessionStorage.getItem('ps_et')==='1'){var p=c.querySelector('img.partition');if(p)p.style.display='block';if(bs[0])bs[0].textContent='\u2716 Einteilung';}if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';if(bs[1])bs[1].textContent='\u2716 Kontext';}if(sessionStorage.getItem('ps_rot')==='1'){c.querySelectorAll('img').forEach(function(i){i.style.transform='rotate(180deg)';});if(bs[2])bs[2].textContent='\u2716 Drehen';}})();</script>
+<script>(function(){var c=document.querySelector('.card-map');if(!c)return;var bs=c.querySelectorAll('.hint-btn');if(sessionStorage.getItem('ps_et')==='1'){var p=c.querySelector('img.partition');if(p)p.style.display='block';if(bs[0])bs[0].textContent='\u2716 Einteilung';}if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';if(bs[1])bs[1].textContent='\u2716 Kontext';}if(sessionStorage.getItem('ps_rot')==='1'){var bm=c.querySelector('img.basemap');var br=c.querySelector('img.basemap-rot');if(bm)bm.style.display='none';if(br)br.style.display='block';c.querySelectorAll('img:not(.basemap):not(.basemap-rot):not(.thumbnail)').forEach(function(i){i.style.transform='rotate(180deg)';});var cb=c.querySelector('.compass-btn');if(cb)cb.style.transform='rotate(180deg)';}})();</script>
 """
 
 _TMPL_BACK = """\
@@ -130,14 +160,15 @@ _TMPL_BACK = """\
 <hr>
 <div class="card-map">
 {{Basemap}}
+{{BasemapRot}}
 {{Partition}}
 {{Context}}
 {{BackOverlay}}
 <button class="hint-btn" onclick="var i=this.parentNode.querySelector('img.partition');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\u2716 Einteilung':'\u25a6 Einteilung';sessionStorage.setItem('ps_et',v?'1':'0');">&#9638; Einteilung</button>
 <button class="hint-btn" style="left:110px;" onclick="var i=this.parentNode.querySelector('img.context');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\u2716 Kontext':'\u25a6 Kontext';sessionStorage.setItem('ps_ctx',v?'1':'0');">&#9638; Kontext</button>
-<button class="hint-btn" style="left:200px;" onclick="var imgs=this.parentNode.querySelectorAll('img');var r=imgs[0]&&imgs[0].style.transform==='rotate(180deg)';imgs.forEach(function(i){i.style.transform=r?'':'rotate(180deg)';});this.textContent=r?'\u21BB Drehen':'\u2716 Drehen';sessionStorage.setItem('ps_rot',r?'0':'1');">&#8635; Drehen</button>
+<div class="compass-btn" onclick="var c=this.parentNode;var bm=c.querySelector('img.basemap');var br=c.querySelector('img.basemap-rot');var r=bm&&bm.style.display==='none';if(bm)bm.style.display=r?'':'none';if(br)br.style.display=r?'':'block';c.querySelectorAll('img:not(.basemap):not(.basemap-rot):not(.thumbnail)').forEach(function(i){i.style.transform=r?'':'rotate(180deg)';});this.style.transform=r?'':'rotate(180deg)';sessionStorage.setItem('ps_rot',r?'0':'1');"><svg viewBox="0 0 40 48"><polygon points="20,2 8,28 20,22" fill="none" stroke="#333" stroke-width="1.8" stroke-linejoin="round"/><polygon points="20,2 32,28 20,22" fill="#333" stroke="#333" stroke-width="1.8" stroke-linejoin="round"/><text x="20" y="44" text-anchor="middle" font-size="14" font-weight="bold" fill="#333" font-family="sans-serif">N</text></svg></div>
 </div>
-<script>(function(){var c=document.querySelector('.card-map');if(!c)return;var bs=c.querySelectorAll('.hint-btn');if(sessionStorage.getItem('ps_et')==='1'){var p=c.querySelector('img.partition');if(p)p.style.display='block';if(bs[0])bs[0].textContent='\u2716 Einteilung';}if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';if(bs[1])bs[1].textContent='\u2716 Kontext';}if(sessionStorage.getItem('ps_rot')==='1'){c.querySelectorAll('img').forEach(function(i){i.style.transform='rotate(180deg)';});if(bs[2])bs[2].textContent='\u2716 Drehen';}})();</script>
+<script>(function(){var c=document.querySelector('.card-map');if(!c)return;var bs=c.querySelectorAll('.hint-btn');if(sessionStorage.getItem('ps_et')==='1'){var p=c.querySelector('img.partition');if(p)p.style.display='block';if(bs[0])bs[0].textContent='\u2716 Einteilung';}if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';if(bs[1])bs[1].textContent='\u2716 Kontext';}if(sessionStorage.getItem('ps_rot')==='1'){var bm=c.querySelector('img.basemap');var br=c.querySelector('img.basemap-rot');if(bm)bm.style.display='none';if(br)br.style.display='block';c.querySelectorAll('img:not(.basemap):not(.basemap-rot):not(.thumbnail)').forEach(function(i){i.style.transform='rotate(180deg)';});var cb=c.querySelector('.compass-btn');if(cb)cb.style.transform='rotate(180deg)';}})();</script>
 """
 
 
@@ -153,6 +184,7 @@ def _group_model(model_id: int, model_name: str) -> genanki.Model:
             {"name": "Name"},
             {"name": "Hoechster_Gipfel"},
             {"name": "Basemap"},
+            {"name": "BasemapRot"},
             {"name": "FrontOverlay"},
             {"name": "BackOverlay"},
             {"name": "Partition"},
@@ -184,6 +216,14 @@ def _collect_group_layers(d: Deck, media_files: list) -> dict:
         return None
     media_files.append(str(basemap_path))
     result["basemap_html"] = f'<img class="basemap" src="{basemap_file}">'
+
+    basemap_rot_file = d.filename_basemap_rot()
+    basemap_rot_path = d.output_images_dir / basemap_rot_file
+    if not basemap_rot_path.exists():
+        print(f"[APKG] ERROR: Rotated basemap not found: {basemap_rot_path}")
+        return None
+    media_files.append(str(basemap_rot_path))
+    result["basemap_rot_html"] = f'<img class="basemap-rot" src="{basemap_rot_file}">'
 
     partition_file = d.filename_partition(".webp")
     partition_path = d.output_images_dir / partition_file
@@ -248,6 +288,7 @@ def _build_group_notes(
                 group.name,
                 group.hoechster_gipfel,
                 layers["basemap_html"],
+                layers["basemap_rot_html"],
                 f'<img class="overlay" src="{front_file}">',
                 f'<img class="overlay" src="{back_file}">',
                 layers["partition_html"],
@@ -314,7 +355,7 @@ def generate_apkg(d: Deck) -> None:
     deck_title = f"Gebirgsgruppen der {region_label}"
 
     base = f"peak_soaring_{d.name}"
-    _MODEL_VER = 2
+    _MODEL_VER = 3
     model_id = int(hashlib.sha256(f"{base}_model_v{_MODEL_VER}".encode()).hexdigest()[:8], 16)
     deck_id = int(hashlib.sha256(f"{base}_deck".encode()).hexdigest()[:8], 16)
 
@@ -368,7 +409,7 @@ def generate_apkg_combined(region_name: str, merge_key: str) -> None:
     parent_title = f"Gebirgsgruppen der {region_label}"
 
     base = f"peak_soaring_{merge_key}"
-    _MODEL_VER = 2
+    _MODEL_VER = 3
     model_id = int(hashlib.sha256(f"{base}_combined_model_v{_MODEL_VER}".encode()).hexdigest()[:8], 16)
     model = _group_model(model_id, parent_title)
 
@@ -414,6 +455,9 @@ def generate_apkg_combined(region_name: str, merge_key: str) -> None:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _POI_APKG_CSS = _BASE_CSS + """\
+.card-map img.basemap-rot {
+    display: none;
+}
 .card-map img.allpois,
 .card-map img.context {
     display: none;
@@ -443,15 +487,16 @@ _POI_APKG_CSS = _BASE_CSS + """\
 _POI_TMPL_IDENTIFY_FRONT = """\
 <div class="card-map">
 {{Basemap}}
+{{BasemapRot}}
 {{AllPois}}
 {{Highlight}}
 {{Context}}
 {{#Thumbnail}}{{Thumbnail}}{{/Thumbnail}}
 <button class="hint-btn" onclick="var i=this.parentNode.querySelector('img.allpois');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\\u2716 POIs':'\\u25a6 POIs';sessionStorage.setItem('ps_pois',v?'1':'0');">&#9638; POIs</button>
 <button class="hint-btn" style="left:80px;" onclick="var i=this.parentNode.querySelector('img.context');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\\u2716 Kontext':'\\u25a6 Kontext';sessionStorage.setItem('ps_ctx',v?'1':'0');">&#9638; Kontext</button>
-<button class="hint-btn" style="left:166px;" onclick="var imgs=this.parentNode.querySelectorAll('img');var r=imgs[0]&&imgs[0].style.transform==='rotate(180deg)';imgs.forEach(function(i){i.style.transform=r?'':'rotate(180deg)';});this.textContent=r?'\\u21BB Drehen':'\\u2716 Drehen';sessionStorage.setItem('ps_rot',r?'0':'1');">&#8635; Drehen</button>
+<div class="compass-btn" onclick="var c=this.parentNode;var bm=c.querySelector('img.basemap');var br=c.querySelector('img.basemap-rot');var r=bm&&bm.style.display==='none';if(bm)bm.style.display=r?'':'none';if(br)br.style.display=r?'':'block';c.querySelectorAll('img:not(.basemap):not(.basemap-rot):not(.thumbnail)').forEach(function(i){i.style.transform=r?'':'rotate(180deg)';});this.style.transform=r?'':'rotate(180deg)';sessionStorage.setItem('ps_rot',r?'0':'1');"><svg viewBox="0 0 40 48"><polygon points="20,2 8,28 20,22" fill="none" stroke="#333" stroke-width="1.8" stroke-linejoin="round"/><polygon points="20,2 32,28 20,22" fill="#333" stroke="#333" stroke-width="1.8" stroke-linejoin="round"/><text x="20" y="44" text-anchor="middle" font-size="14" font-weight="bold" fill="#333" font-family="sans-serif">N</text></svg></div>
 </div>
-<script>(function(){var c=document.querySelector('.card-map');if(!c)return;var bs=c.querySelectorAll('.hint-btn');if(sessionStorage.getItem('ps_pois')==='1'){var a=c.querySelector('img.allpois');if(a)a.style.display='block';if(bs[0])bs[0].textContent='\\u2716 POIs';}if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';if(bs[1])bs[1].textContent='\\u2716 Kontext';}if(sessionStorage.getItem('ps_rot')==='1'){c.querySelectorAll('img').forEach(function(i){i.style.transform='rotate(180deg)';});if(bs[2])bs[2].textContent='\\u2716 Drehen';}})();</script>
+<script>(function(){var c=document.querySelector('.card-map');if(!c)return;var bs=c.querySelectorAll('.hint-btn');if(sessionStorage.getItem('ps_pois')==='1'){var a=c.querySelector('img.allpois');if(a)a.style.display='block';if(bs[0])bs[0].textContent='\\u2716 POIs';}if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';if(bs[1])bs[1].textContent='\\u2716 Kontext';}if(sessionStorage.getItem('ps_rot')==='1'){var bm=c.querySelector('img.basemap');var br=c.querySelector('img.basemap-rot');if(bm)bm.style.display='none';if(br)br.style.display='block';c.querySelectorAll('img:not(.basemap):not(.basemap-rot):not(.thumbnail)').forEach(function(i){i.style.transform='rotate(180deg)';});var cb=c.querySelector('.compass-btn');if(cb)cb.style.transform='rotate(180deg)';}})();</script>
 """
 
 _POI_TMPL_IDENTIFY_BACK = """\
@@ -462,15 +507,16 @@ _POI_TMPL_IDENTIFY_BACK = """\
 <hr>
 <div class="card-map">
 {{Basemap}}
+{{BasemapRot}}
 {{AllPois}}
 {{BackOverlay}}
 {{Context}}
 {{#Thumbnail}}{{Thumbnail}}{{/Thumbnail}}
 <button class="hint-btn" onclick="var i=this.parentNode.querySelector('img.allpois');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\\u2716 POIs':'\\u25a6 POIs';sessionStorage.setItem('ps_pois',v?'1':'0');">&#9638; POIs</button>
 <button class="hint-btn" style="left:80px;" onclick="var i=this.parentNode.querySelector('img.context');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\\u2716 Kontext':'\\u25a6 Kontext';sessionStorage.setItem('ps_ctx',v?'1':'0');">&#9638; Kontext</button>
-<button class="hint-btn" style="left:166px;" onclick="var imgs=this.parentNode.querySelectorAll('img');var r=imgs[0]&&imgs[0].style.transform==='rotate(180deg)';imgs.forEach(function(i){i.style.transform=r?'':'rotate(180deg)';});this.textContent=r?'\\u21BB Drehen':'\\u2716 Drehen';sessionStorage.setItem('ps_rot',r?'0':'1');">&#8635; Drehen</button>
+<div class="compass-btn" onclick="var c=this.parentNode;var bm=c.querySelector('img.basemap');var br=c.querySelector('img.basemap-rot');var r=bm&&bm.style.display==='none';if(bm)bm.style.display=r?'':'none';if(br)br.style.display=r?'':'block';c.querySelectorAll('img:not(.basemap):not(.basemap-rot):not(.thumbnail)').forEach(function(i){i.style.transform=r?'':'rotate(180deg)';});this.style.transform=r?'':'rotate(180deg)';sessionStorage.setItem('ps_rot',r?'0':'1');"><svg viewBox="0 0 40 48"><polygon points="20,2 8,28 20,22" fill="none" stroke="#333" stroke-width="1.8" stroke-linejoin="round"/><polygon points="20,2 32,28 20,22" fill="#333" stroke="#333" stroke-width="1.8" stroke-linejoin="round"/><text x="20" y="44" text-anchor="middle" font-size="14" font-weight="bold" fill="#333" font-family="sans-serif">N</text></svg></div>
 </div>
-<script>(function(){var c=document.querySelector('.card-map');if(!c)return;var bs=c.querySelectorAll('.hint-btn');if(sessionStorage.getItem('ps_pois')==='1'){var a=c.querySelector('img.allpois');if(a)a.style.display='block';if(bs[0])bs[0].textContent='\\u2716 POIs';}if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';if(bs[1])bs[1].textContent='\\u2716 Kontext';}if(sessionStorage.getItem('ps_rot')==='1'){c.querySelectorAll('img').forEach(function(i){i.style.transform='rotate(180deg)';});if(bs[2])bs[2].textContent='\\u2716 Drehen';}})();</script>
+<script>(function(){var c=document.querySelector('.card-map');if(!c)return;var bs=c.querySelectorAll('.hint-btn');if(sessionStorage.getItem('ps_pois')==='1'){var a=c.querySelector('img.allpois');if(a)a.style.display='block';if(bs[0])bs[0].textContent='\\u2716 POIs';}if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';if(bs[1])bs[1].textContent='\\u2716 Kontext';}if(sessionStorage.getItem('ps_rot')==='1'){var bm=c.querySelector('img.basemap');var br=c.querySelector('img.basemap-rot');if(bm)bm.style.display='none';if(br)br.style.display='block';c.querySelectorAll('img:not(.basemap):not(.basemap-rot):not(.thumbnail)').forEach(function(i){i.style.transform='rotate(180deg)';});var cb=c.querySelector('.compass-btn');if(cb)cb.style.transform='rotate(180deg)';}})();</script>
 """
 
 
@@ -493,6 +539,7 @@ def _poi_model(model_id: int, model_name: str) -> genanki.Model:
             {"name": "Category"},
             {"name": "Info"},
             {"name": "Basemap"},
+            {"name": "BasemapRot"},
             {"name": "AllPois"},
             {"name": "Highlight"},
             {"name": "BackOverlay"},
@@ -537,6 +584,14 @@ def _collect_shared_layers(d: POIDeck, media_files: list) -> dict:
         return None
     media_files.append(str(basemap_path))
     result["basemap_html"] = f'<img class="basemap" src="{basemap_file}">'
+
+    basemap_rot_file = d.filename_basemap_rot()
+    basemap_rot_path = d.output_images_dir / basemap_rot_file
+    if not basemap_rot_path.exists():
+        print(f"[APKG-POI] ERROR: Rotated basemap not found: {basemap_rot_path}")
+        return None
+    media_files.append(str(basemap_rot_path))
+    result["basemap_rot_html"] = f'<img class="basemap-rot" src="{basemap_rot_file}">'
 
     context_file = d.filename_context()
     context_path = d.output_images_dir / context_file
@@ -623,6 +678,7 @@ def _build_poi_notes(
                 cat_labels.get(poi.category, poi.category),
                 _poi_info_str(poi),
                 layers["basemap_html"],
+                layers["basemap_rot_html"],
                 layers["all_pois_html"],
                 f'<img class="overlay" src="{highlight_file}">',
                 f'<img class="overlay" src="{back_file}">',
@@ -656,7 +712,7 @@ def generate_apkg_poi(d: POIDeck) -> None:
     deck_title = f"{region_label} {system_label} (Beta {today})"
 
     base = f"peak_soaring_{d.name}"
-    _MODEL_VER = 2
+    _MODEL_VER = 3
     model_id = int(hashlib.sha256(f"{base}_poi_model_v{_MODEL_VER}".encode()).hexdigest()[:8], 16)
     deck_id = int(hashlib.sha256(f"{base}_poi_deck".encode()).hexdigest()[:8], 16)
 
@@ -714,7 +770,7 @@ def generate_apkg_poi_multi(d: POIDeck, region_name: str) -> None:
     # Bump _MODEL_VER when fields or templates change to force Anki
     # to create a fresh note-type on re-import (otherwise the old
     # model is kept and new fields like Thumbnail are invisible).
-    _MODEL_VER = 2
+    _MODEL_VER = 3
     model_id = int(hashlib.sha256(
         f"{base}_multi_model_v{_MODEL_VER}".encode()
     ).hexdigest()[:8], 16)

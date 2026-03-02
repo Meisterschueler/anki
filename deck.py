@@ -73,9 +73,19 @@ QMARK_MIN_RADIUS_ABS = 0.008         # absolute minimum circle radius (degrees)
 
 # ─── Hillshade ────────────────────────────────────────────────────────────────
 HILLSHADE_AZIMUTH = 315
+HILLSHADE_AZIMUTH_ROT = 135               # flipped azimuth for 180°-rotated basemap
 HILLSHADE_ALTITUDE = 45
 HILLSHADE_VERT_EXAG = 0.05
 HILLSHADE_BLEND_MODE = "soft"
+
+# ─── Compass needle ──────────────────────────────────────────────────────────
+COMPASS_RADIUS_RATIO = 0.020     # needle radius relative to short image edge
+COMPASS_MARGIN_RATIO = 0.015     # margin from top/right edge
+COMPASS_NORTH_COLOR = "#CC0000"  # red = north half of needle
+COMPASS_SOUTH_COLOR = "#FFFFFF"  # white = south half
+COMPASS_OUTLINE_COLOR = "#555555"
+COMPASS_BG_ALPHA = 180           # background circle opacity (0-255)
+COMPASS_FONT = "segoeui.ttf"     # Segoe UI (available on Windows)
 
 # ─── Rivers & Lakes ──────────────────────────────────────────────────────────
 OCEAN_COLOR = "#c6ddf0"
@@ -86,7 +96,7 @@ VALLEY_MIN_LENGTH_KM = 20         # Minimum total valley length (km) to include
 LAKE_FACECOLOR = "#7FAFCF"
 LAKE_EDGECOLOR = "#4A7FB5"
 LAKE_LINEWIDTH = 0.3
-LAKE_MIN_AREA_KM2 = 1.0           # Minimum lake area (km²) for OSM lakes
+LAKE_MIN_AREA_KM2 = 0.2           # Minimum lake area (km²) for OSM lakes
 
 # ─── Country borders ─────────────────────────────────────────────────────────
 COUNTRY_BORDER_COLOR = "#555555"
@@ -297,6 +307,10 @@ class BaseDeck:
         """Generate filename for shared basemap WebP (hillshade + rivers + lakes)."""
         return f"{self.prefix}_basemap.webp"
 
+    def filename_basemap_rot(self) -> str:
+        """Generate filename for rotated basemap (hillshade azimuth 135°)."""
+        return f"{self.prefix}_basemap_rot.webp"
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # DECK DATACLASS — Region × Classification with property delegation
@@ -491,10 +505,10 @@ SUB_REGIONS: Dict[str, List[SubRegion]] = {
             bbox_west=11.0, bbox_east=12.0,
             bbox_south=47.23, bbox_north=47.78,
             cities=[
-                ("Kochel",        11.367, 47.659,  0.03,  0.02),
-                ("Bad Tölz",      11.556, 47.761,  0.03,  0.02),
-                ("Garmisch-P.",   11.096, 47.492,  0.03,  0.02),
-                ("Innsbruck",     11.394, 47.310,  0.03, -0.02),
+                ("Kochel",        11.367, 47.659,  0.05,  0.02),
+                ("Bad Tölz",      11.556, 47.761,  0.05,  0.02),
+                ("Garmisch-P.",   11.096, 47.492,  0.05,  0.02),
+                ("Innsbruck",     11.394, 47.267,  0.05, -0.02),
             ],
         ),
         SubRegion(
@@ -503,10 +517,10 @@ SUB_REGIONS: Dict[str, List[SubRegion]] = {
             bbox_west=10.8, bbox_east=11.9,
             bbox_south=46.9, bbox_north=47.5,
             cities=[
-                ("Innsbruck",     11.394, 47.260,  0.03,  0.02),
-                ("Garmisch-P.",   11.096, 47.492,  0.03, -0.02),
-                ("Ehrwald",       10.918, 47.395, -0.03,  0.02),
-                ("Telfs",         11.071, 47.307,  0.03, -0.02),
+                ("Innsbruck",     11.394, 47.267,  0.05,  0.02),
+                ("Garmisch-P.",   11.096, 47.492,  0.05, -0.02),
+                ("Ehrwald",       10.918, 47.395,  0.05,  0.02),
+                ("Telfs",         11.071, 47.307,  0.05,  0.02),
             ],
         ),
     ],
