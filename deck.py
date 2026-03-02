@@ -400,10 +400,6 @@ class POIDeck(BaseDeck):
 
     # ── POI-specific filenames ───────────────────────────────────────────
 
-    def filename_poi_front(self, poi_id: str, ext: str = ".png") -> str:
-        safe_id = poi_id.replace("/", "_")
-        return f"{self.prefix}_poi_{safe_id}_front{ext}"
-
     def filename_poi_back(self, poi_id: str, ext: str = ".png") -> str:
         safe_id = poi_id.replace("/", "_")
         return f"{self.prefix}_poi_{safe_id}_back{ext}"

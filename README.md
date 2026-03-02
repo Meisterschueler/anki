@@ -1,6 +1,8 @@
 # Peak Soaring — Alpen-Lerndecks für Anki
 
 Erzeugt Anki-Lerndecks (`.apkg`) für **Gebirgsgruppen** und **Landmarks** der Alpen.
+Alle Karten basieren auf einem CSS-Layer-Ansatz: eine opake Basemap plus transparente
+WebP-Overlays, die in Anki übereinander gelegt werden.
 
 ## Unterstützte Decks
 
@@ -14,38 +16,206 @@ Erzeugt Anki-Lerndecks (`.apkg`) für **Gebirgsgruppen** und **Landmarks** der A
 | Westalpen | SOIUSA (Sezioni) | 14 | uMap (homoalpinus.com) |
 | Westalpen | SOIUSA (Sottosezioni) | 55 | ARPA Piemonte FeatureServer |
 
+SOIUSA-Decks werden pro Region zu einem kombinierten `.apkg` mit Subdecks zusammengeführt:
+`A Gliederung` (Sezioni) + `B Details` (Sottosezioni).
+
 ### POI-Decks (Punkte)
 
 | Region | System | POIs | Inhalt |
 |--------|--------|------|--------|
-| Ostalpen | POIs | 40 | Gipfel, Pässe, Orte, Täler aus "Peak Soaring" |
+| Ostalpen | POIs | 209 | Gipfel, Pässe, Orte, Täler, Seen aus "Peak Soaring" |
+| Westalpen | POIs | 209 | (gefiltert auf Region-Bbox) |
+
+POI-Kategorien: 78 Gipfel (▲), 59 Pässe (⬤), 22 Täler (◆), 43 Orte (■), 7 Seen (⬡).
+
+Das Ostalpen-POI-Deck wird als Multi-Deck mit Subdecks gebaut:
+- **Sub-Regions** (gezoomte Karte + Thumbnail): `A Königsdorf`, `B Innsbruck`
+- **Kategorien** (Gesamtkarte, gefiltert): `C Gipfel`, `D Pässe`, `E Orte`, `F Täler`, `G Seen`
 
 ## Kartentypen
 
 ### Gebirgsgruppen-Karten
 
-Einzelnes Template mit Toggle-Button:
+Einzelnes Template „Gebirgsgruppe" mit Toggle-Buttons:
 
-- **Vorderseite**: Reliefkarte mit rot hervorgehobener Gruppe + „▦ Einteilung"-Button
-  (blendet die farbige Gesamteinteilung als Hinweis ein)
-- **Rückseite**: Name + höchster Gipfel + Reliefkarte mit Gruppe, Städten und
-  Ländergrenzen + „▦ Einteilung"-Button
+- **Vorderseite**: Reliefkarte mit rotem Fragezeichen im Gruppenpolygon
+  + „▦ Einteilung"-Button (blendet farbige Gesamteinteilung ein)
+  + „▦ Kontext"-Button (blendet Ländergrenzen + Städtenamen ein)
+  + „↻ Drehen"-Button (dreht alle Layer um 180° — erhöht Schwierigkeit)
+- **Rückseite**: Name + Gruppen-ID + höchster Gipfel,
+  Reliefkarte mit farbigem Polygon (+ Parent-Polygon bei hierarchischen Systemen)
+  + gleiche Toggle-Buttons
 
 ### POI-Karten
 
-Zwei Templates pro POI:
+Ein Template „Was ist das?" (markierter Ort → Name erraten):
 
-- **Template 1 — „Wo ist X?"**: Name gegeben → Ort auf der Karte finden
-- **Template 2 — „Was ist das?"**: Ort markiert → Name erraten
+- **Vorderseite**: Reliefkarte mit rotem Highlight-Kreis am Ziel-POI
+  + „▦ POIs"-Button (blendet alle POI-Marker ein)
+  + „▦ Kontext"-Button (Grenzen + Städte)
+  + „↻ Drehen"-Button (dreht alle Layer um 180°)
+  + optionales Thumbnail (nur bei Sub-Region-Decks: Übersichtskarte mit rotem Rechteck)
+- **Rückseite**: Name + Kategorie + Info (Höhe, Untertitel),
+  Reliefkarte mit allen POIs + Ziel hervorgehoben
+  + gleiche Toggle-Buttons
+
+## Ausgabeformat — `.apkg`-Spezifikation
+
+### Dateiformat
+
+- **Paketformat**: Anki `.apkg` (ZIP mit SQLite-DB + Mediendateien)
+- **Erzeugt mit**: `genanki` (Python-Bibliothek)
+- **Bildformat**: WebP (alle Layer haben identische Pixeldimensionen pro Deck)
+
+### Bild-Layer (WebP)
+
+Jede Anki-Karte besteht aus mehreren WebP-Bildern, die per CSS (`position: absolute`)
+pixelgenau übereinander gelegt werden. Alle Layer eines Decks haben exakt gleiche Dimensionen.
+
+| Eigenschaft | Basemap | Overlays |
+|-------------|---------|----------|
+| **Transparenz** | Opak (RGB) | Transparent (RGBA) |
+| **Kompression** | Lossy (Quality 90) | Lossless |
+| **Auflösung** | Max 7680 × 4320 px (8K UHD) | Identisch zur Basemap |
+| **Rendering-DPI** | 480 | 480 |
+| **Inhalt** | Hillshade + Ozean + Flüsse + Seen | Vektordaten (Polygone, Marker, Grenzen, …) |
+
+### Layer-Aufbau — Gebirgsgruppen-Deck
+
+Jede Karte referenziert diese Bilder (alle `.webp`):
+
+| Layer | CSS-Klasse | Dateinamenbeispiel | Inhalt | Sichtbarkeit |
+|-------|------------|--------------------|--------|--------------|
+| **Basemap** | `basemap` | `ps_ostalpen_ave84_basemap.webp` | Hillshade-Relief + Gewässer | Immer sichtbar |
+| **Partition** | `overlay partition` | `ps_ostalpen_ave84_partition.webp` | Alle Gruppen farbig + IDs | Versteckt, per Button einblendbar |
+| **Context** | `overlay context` | `ps_ostalpen_ave84_context.webp` | Ländergrenzen + Städtenamen | Versteckt, per Button einblendbar |
+| **FrontOverlay** | `overlay` | `ps_ostalpen_ave84_group_3b_front.webp` | Rotes Fragezeichen im Polygon | Nur Vorderseite |
+| **BackOverlay** | `overlay` | `ps_ostalpen_ave84_group_3b_back.webp` | Farbiges Polygon (+ Parent) | Nur Rückseite |
+
+### Layer-Aufbau — POI-Deck
+
+| Layer | CSS-Klasse | Dateinamenbeispiel | Inhalt | Sichtbarkeit |
+|-------|------------|--------------------|--------|--------------|
+| **Basemap** | `basemap` | `ps_ostalpen_pois_basemap.webp` | Hillshade-Relief + Gewässer | Immer sichtbar |
+| **AllPois** | `overlay allpois` | `ps_ostalpen_pois_all_pois.webp` | Alle POI-Marker + Labels | Versteckt, per Button einblendbar |
+| **Highlight** | `overlay` | `ps_ostalpen_pois_poi_peak_01_highlight.webp` | Roter Kreis / Polygon am Ziel-POI | Nur Vorderseite |
+| **BackOverlay** | `overlay` | `ps_ostalpen_pois_poi_peak_01_back.webp` | Roter Kreis am Ziel (Rückseite) | Nur Rückseite |
+| **Context** | `overlay context` | `ps_ostalpen_pois_context.webp` | Ländergrenzen + Städtenamen | Versteckt, per Button einblendbar |
+| **Thumbnail** | `thumbnail` | `ps_ostalpen_pois_thumb_koenigsdorf.webp` | Übersichtskarte mit rotem Rechteck | Nur bei Sub-Region-Decks (konditional) |
+
+### CSS-Compositing in Anki
+
+```css
+.card-map {
+    position: relative;
+    display: inline-block;
+}
+.card-map img.basemap {
+    display: block;           /* unterste Ebene, definiert die Kartengröße */
+}
+.card-map img.overlay {
+    position: absolute;       /* pixelgenau über der Basemap */
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+}
+```
+
+Partition, AllPois und Context sind per CSS standardmäßig `display: none` und werden
+über JavaScript-Toggle-Buttons (`sessionStorage`-persistent) ein-/ausgeblendet.
+Das Thumbnail ist per `{{#Thumbnail}}…{{/Thumbnail}}` (Mustache-Konditional) nur vorhanden,
+wenn das Feld befüllt ist.
+
+### Anki-Datenmodell
+
+**Gebirgsgruppen-Modell** — 8 Felder:
+
+| Feld | Typ | Beschreibung |
+|------|-----|-------------|
+| `Group_ID` | Text | Gruppen-ID (z.B. `3b`, `SZ.5`) |
+| `Name` | Text | Gruppenname |
+| `Hoechster_Gipfel` | Text | Höchster Gipfel mit Höhe |
+| `Basemap` | HTML | `<img class="basemap" src="…">` |
+| `FrontOverlay` | HTML | `<img class="overlay" src="…">` |
+| `BackOverlay` | HTML | `<img class="overlay" src="…">` |
+| `Partition` | HTML | `<img class="overlay partition" src="…">` |
+| `Context` | HTML | `<img class="overlay context" src="…">` |
+
+**POI-Modell** — 10 Felder:
+
+| Feld | Typ | Beschreibung |
+|------|-----|-------------|
+| `POI_ID` | Text | Eindeutige ID (z.B. `peak_01`) |
+| `Name` | Text | Anzeigename (z.B. `Zugspitze`) |
+| `Category` | Text | Kategorie-Label (z.B. `Gipfel`) |
+| `Info` | Text | Höhe + Untertitel (z.B. `2962 m`) |
+| `Basemap` | HTML | `<img class="basemap" src="…">` |
+| `AllPois` | HTML | `<img class="overlay allpois" src="…">` |
+| `Highlight` | HTML | `<img class="overlay" src="…">` |
+| `BackOverlay` | HTML | `<img class="overlay" src="…">` |
+| `Context` | HTML | `<img class="overlay context" src="…">` |
+| `Thumbnail` | HTML | `<img class="thumbnail" src="…">` oder leer |
+
+### Basemap-Rendering
+
+Die opake Basemap wird als reines Raster (numpy / rasterio / Pillow) gerendert:
+
+1. **DEM laden** — SRTM 90 m GeoTIFF, Downsampling bei > 7000 px Kantenlänge
+2. **Hillshade** — Azimut 315°, Altitude 45°, vertikale Überhöhung 0.05, Soft-Blending
+3. **Gewässer** — Flüsse (blau, ≥ 20 km) + Seen (gefüllt, ≥ 1 km²) aus OSM-GeoJSON
+4. **Ozean** — Fläche außerhalb des Festlands in `#c6ddf0`
+
+Höhen > 4200 m werden gekappt. Projektion: PlateCarree (WGS 84).
+
+### Dateinamen-Konvention
+
+Alle Bilddateien folgen dem Schema `ps_{region}_{system}_{layer}.webp`:
+
+```
+ps_ostalpen_ave84_basemap.webp
+ps_ostalpen_ave84_partition.webp
+ps_ostalpen_ave84_context.webp
+ps_ostalpen_ave84_group_{id}_front.webp
+ps_ostalpen_ave84_group_{id}_back.webp
+
+ps_ostalpen_pois_basemap.webp
+ps_ostalpen_pois_all_pois.webp
+ps_ostalpen_pois_context.webp
+ps_ostalpen_pois_poi_{poi_id}_highlight.webp
+ps_ostalpen_pois_poi_{poi_id}_back.webp
+ps_ostalpen_pois_thumb_{sub_region}.webp
+```
+
+### Ausgabeverzeichnisse
+
+```
+output/
+├── ostalpen_ave84/
+│   ├── anki_ostalpen_ave84.apkg         # Fertiges Deck
+│   └── images/                           # Alle WebP-Layer
+├── ostalpen_soiusa/
+│   ├── anki_ostalpen_soiusa.apkg        # Kombiniertes Deck (SZ + STS)
+│   └── images/
+├── ostalpen_pois/
+│   ├── anki_ostalpen_pois.apkg          # Multi-Deck (Sub-Regions + Kategorien)
+│   └── images/
+├── westalpen_soiusa/
+│   ├── anki_westalpen_soiusa.apkg
+│   └── images/
+└── westalpen_pois/
+    ├── anki_westalpen_pois.apkg
+    └── images/
+```
 
 ## Datenquellen
 
 | Quelle | Verwendung |
 |--------|-----------|
-| OpenStreetMap | Gebirgsgruppen-Polygone, Ländergrenzen, Flüsse, Seen |
+| OpenStreetMap | Gebirgsgruppen-Polygone, Ländergrenzen, Flüsse, Seen, Täler |
 | uMap #954288 | SOIUSA-Polygone (Westalpen SZ) |
-| ARPA Piemonte | SOIUSA-Polygone (Ost- & Westalpen) |
-| CGIAR-CSI SRTM 90m | Höhenmodell für Reliefkarte |
+| ARPA Piemonte | SOIUSA-Polygone (Ost- & Westalpen SZ + STS) |
+| CGIAR-CSI SRTM 90m | Höhenmodell für Hillshade-Relief |
+
+Details zu allen Quellen, Lizenzen und Abrufmethoden: → `SOURCES.md`
 
 ## Setup
 
@@ -54,6 +224,9 @@ python -m venv .venv
 .venv\Scripts\activate        # Windows
 pip install -r requirements.txt
 ```
+
+Abhängigkeiten: cartopy, matplotlib, numpy, rasterio, geopandas, shapely,
+Pillow, genanki, pytest u.a. (siehe `requirements.txt`).
 
 ## Workflow
 
@@ -82,28 +255,31 @@ python scripts/04_build_deck.py --region ostalpen --system pois
 python scripts/05_run_tests.py
 ```
 
+Bilder werden beim Deck-Bau (Schritt 4) automatisch erzeugt falls nicht vorhanden.
+`--force` in Schritt 3 erzwingt Neugenerierung vorhandener Bilder.
+
 ## Projektstruktur
 
 ```
 peak_soaring/
-├── models.py                        # Gebirgsgruppe Dataclass
-├── deck.py                          # Region / Classification / Deck / POIDeck
+├── models.py                        # Gebirgsgruppe + POI Dataclasses
+├── deck.py                          # Region / Classification / Deck / POIDeck / Konstanten
 ├── classifications/
 │   ├── ave84.py                     # 75 Ostalpen-Gruppen (AVE 84)
 │   ├── ostalpen_soiusa_sz.py        # 22 Ostalpen-Sezioni (SOIUSA)
 │   ├── ostalpen_soiusa_sts.py       # 76 Ostalpen-Sottosezioni (SOIUSA)
 │   ├── westalpen_soiusa_sz.py       # 14 Westalpen-Sezioni (SOIUSA)
 │   ├── westalpen_soiusa_sts.py      # 55 Westalpen-Sottosezioni (SOIUSA)
-│   └── pois.py                      # 40 POIs (Gipfel, Pässe, Orte, Täler)
+│   └── pois.py                      # 209 POIs (Gipfel, Pässe, Orte, Täler, Seen)
 ├── regions/
 │   ├── ostalpen.py                  # Bbox, Städte, Projektion
 │   └── westalpen.py
 ├── scripts/
 │   ├── 01_download_data.py          # OSM + DEM herunterladen
-│   ├── 02_generate_basemap.py       # Rendering-Funktionen (Basemap, Polygone, …)
+│   ├── 02_generate_basemap.py       # Raster-Basemap + Vektor-Rendering
 │   ├── 03_generate_cards.py         # Kartenbilder für Polygon-Decks
 │   ├── 03b_generate_poi_cards.py    # Kartenbilder für POI-Decks
-│   ├── 04_build_deck.py             # .apkg-Export (Polygon + POI)
+│   ├── 04_build_deck.py             # .apkg-Export (Polygon + POI + Multi-Deck)
 │   ├── 05_run_tests.py              # Pytest-Runner
 │   ├── download_soiusa_arpa.py      # SOIUSA-Polygone von ARPA Piemonte
 │   └── download_soiusa_umap.py      # SOIUSA-Polygone von uMap (Westalpen SZ)
@@ -115,8 +291,9 @@ peak_soaring/
 │   └── dem/                         # Höhenmodell (GeoTIFF)
 └── output/
     ├── ostalpen_ave84/              # .apkg + Bilder
-    ├── ostalpen_pois/               # .apkg + Bilder
+    ├── ostalpen_pois/               # .apkg + Bilder (Multi-Deck)
     ├── ostalpen_soiusa/             # .apkg + Bilder (SZ + STS kombiniert)
+    ├── westalpen_pois/              # .apkg + Bilder
     └── westalpen_soiusa/            # .apkg + Bilder (SZ + STS kombiniert)
 ```
 

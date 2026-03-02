@@ -117,8 +117,9 @@ _TMPL_FRONT = """\
 {{FrontOverlay}}
 <button class="hint-btn" onclick="var i=this.parentNode.querySelector('img.partition');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\u2716 Einteilung':'\u25a6 Einteilung';sessionStorage.setItem('ps_et',v?'1':'0');">&#9638; Einteilung</button>
 <button class="hint-btn" style="left:110px;" onclick="var i=this.parentNode.querySelector('img.context');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\u2716 Kontext':'\u25a6 Kontext';sessionStorage.setItem('ps_ctx',v?'1':'0');">&#9638; Kontext</button>
+<button class="hint-btn" style="left:200px;" onclick="var imgs=this.parentNode.querySelectorAll('img');var r=imgs[0]&&imgs[0].style.transform==='rotate(180deg)';imgs.forEach(function(i){i.style.transform=r?'':'rotate(180deg)';});this.textContent=r?'\u21BB Drehen':'\u2716 Drehen';sessionStorage.setItem('ps_rot',r?'0':'1');">&#8635; Drehen</button>
 </div>
-<script>(function(){var c=document.querySelector('.card-map');if(!c)return;var bs=c.querySelectorAll('.hint-btn');if(sessionStorage.getItem('ps_et')==='1'){var p=c.querySelector('img.partition');if(p)p.style.display='block';if(bs[0])bs[0].textContent='\u2716 Einteilung';}if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';if(bs[1])bs[1].textContent='\u2716 Kontext';}})();</script>
+<script>(function(){var c=document.querySelector('.card-map');if(!c)return;var bs=c.querySelectorAll('.hint-btn');if(sessionStorage.getItem('ps_et')==='1'){var p=c.querySelector('img.partition');if(p)p.style.display='block';if(bs[0])bs[0].textContent='\u2716 Einteilung';}if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';if(bs[1])bs[1].textContent='\u2716 Kontext';}if(sessionStorage.getItem('ps_rot')==='1'){c.querySelectorAll('img').forEach(function(i){i.style.transform='rotate(180deg)';});if(bs[2])bs[2].textContent='\u2716 Drehen';}})();</script>
 """
 
 _TMPL_BACK = """\
@@ -134,8 +135,9 @@ _TMPL_BACK = """\
 {{BackOverlay}}
 <button class="hint-btn" onclick="var i=this.parentNode.querySelector('img.partition');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\u2716 Einteilung':'\u25a6 Einteilung';sessionStorage.setItem('ps_et',v?'1':'0');">&#9638; Einteilung</button>
 <button class="hint-btn" style="left:110px;" onclick="var i=this.parentNode.querySelector('img.context');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\u2716 Kontext':'\u25a6 Kontext';sessionStorage.setItem('ps_ctx',v?'1':'0');">&#9638; Kontext</button>
+<button class="hint-btn" style="left:200px;" onclick="var imgs=this.parentNode.querySelectorAll('img');var r=imgs[0]&&imgs[0].style.transform==='rotate(180deg)';imgs.forEach(function(i){i.style.transform=r?'':'rotate(180deg)';});this.textContent=r?'\u21BB Drehen':'\u2716 Drehen';sessionStorage.setItem('ps_rot',r?'0':'1');">&#8635; Drehen</button>
 </div>
-<script>(function(){var c=document.querySelector('.card-map');if(!c)return;var bs=c.querySelectorAll('.hint-btn');if(sessionStorage.getItem('ps_et')==='1'){var p=c.querySelector('img.partition');if(p)p.style.display='block';if(bs[0])bs[0].textContent='\u2716 Einteilung';}if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';if(bs[1])bs[1].textContent='\u2716 Kontext';}})();</script>
+<script>(function(){var c=document.querySelector('.card-map');if(!c)return;var bs=c.querySelectorAll('.hint-btn');if(sessionStorage.getItem('ps_et')==='1'){var p=c.querySelector('img.partition');if(p)p.style.display='block';if(bs[0])bs[0].textContent='\u2716 Einteilung';}if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';if(bs[1])bs[1].textContent='\u2716 Kontext';}if(sessionStorage.getItem('ps_rot')==='1'){c.querySelectorAll('img').forEach(function(i){i.style.transform='rotate(180deg)';});if(bs[2])bs[2].textContent='\u2716 Drehen';}})();</script>
 """
 
 
@@ -312,7 +314,8 @@ def generate_apkg(d: Deck) -> None:
     deck_title = f"Gebirgsgruppen der {region_label}"
 
     base = f"peak_soaring_{d.name}"
-    model_id = int(hashlib.sha256(f"{base}_model".encode()).hexdigest()[:8], 16)
+    _MODEL_VER = 2
+    model_id = int(hashlib.sha256(f"{base}_model_v{_MODEL_VER}".encode()).hexdigest()[:8], 16)
     deck_id = int(hashlib.sha256(f"{base}_deck".encode()).hexdigest()[:8], 16)
 
     model = _group_model(model_id, deck_title)
@@ -365,7 +368,8 @@ def generate_apkg_combined(region_name: str, merge_key: str) -> None:
     parent_title = f"Gebirgsgruppen der {region_label}"
 
     base = f"peak_soaring_{merge_key}"
-    model_id = int(hashlib.sha256(f"{base}_combined_model".encode()).hexdigest()[:8], 16)
+    _MODEL_VER = 2
+    model_id = int(hashlib.sha256(f"{base}_combined_model_v{_MODEL_VER}".encode()).hexdigest()[:8], 16)
     model = _group_model(model_id, parent_title)
 
     media_files: list[str] = []
@@ -445,8 +449,9 @@ _POI_TMPL_IDENTIFY_FRONT = """\
 {{#Thumbnail}}{{Thumbnail}}{{/Thumbnail}}
 <button class="hint-btn" onclick="var i=this.parentNode.querySelector('img.allpois');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\\u2716 POIs':'\\u25a6 POIs';sessionStorage.setItem('ps_pois',v?'1':'0');">&#9638; POIs</button>
 <button class="hint-btn" style="left:80px;" onclick="var i=this.parentNode.querySelector('img.context');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\\u2716 Kontext':'\\u25a6 Kontext';sessionStorage.setItem('ps_ctx',v?'1':'0');">&#9638; Kontext</button>
+<button class="hint-btn" style="left:166px;" onclick="var imgs=this.parentNode.querySelectorAll('img');var r=imgs[0]&&imgs[0].style.transform==='rotate(180deg)';imgs.forEach(function(i){i.style.transform=r?'':'rotate(180deg)';});this.textContent=r?'\\u21BB Drehen':'\\u2716 Drehen';sessionStorage.setItem('ps_rot',r?'0':'1');">&#8635; Drehen</button>
 </div>
-<script>(function(){var c=document.querySelector('.card-map');if(!c)return;var bs=c.querySelectorAll('.hint-btn');if(sessionStorage.getItem('ps_pois')==='1'){var a=c.querySelector('img.allpois');if(a)a.style.display='block';if(bs[0])bs[0].textContent='\\u2716 POIs';}if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';if(bs[1])bs[1].textContent='\\u2716 Kontext';}})();</script>
+<script>(function(){var c=document.querySelector('.card-map');if(!c)return;var bs=c.querySelectorAll('.hint-btn');if(sessionStorage.getItem('ps_pois')==='1'){var a=c.querySelector('img.allpois');if(a)a.style.display='block';if(bs[0])bs[0].textContent='\\u2716 POIs';}if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';if(bs[1])bs[1].textContent='\\u2716 Kontext';}if(sessionStorage.getItem('ps_rot')==='1'){c.querySelectorAll('img').forEach(function(i){i.style.transform='rotate(180deg)';});if(bs[2])bs[2].textContent='\\u2716 Drehen';}})();</script>
 """
 
 _POI_TMPL_IDENTIFY_BACK = """\
@@ -463,8 +468,9 @@ _POI_TMPL_IDENTIFY_BACK = """\
 {{#Thumbnail}}{{Thumbnail}}{{/Thumbnail}}
 <button class="hint-btn" onclick="var i=this.parentNode.querySelector('img.allpois');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\\u2716 POIs':'\\u25a6 POIs';sessionStorage.setItem('ps_pois',v?'1':'0');">&#9638; POIs</button>
 <button class="hint-btn" style="left:80px;" onclick="var i=this.parentNode.querySelector('img.context');var v=i.style.display!=='block';i.style.display=v?'block':'none';this.textContent=v?'\\u2716 Kontext':'\\u25a6 Kontext';sessionStorage.setItem('ps_ctx',v?'1':'0');">&#9638; Kontext</button>
+<button class="hint-btn" style="left:166px;" onclick="var imgs=this.parentNode.querySelectorAll('img');var r=imgs[0]&&imgs[0].style.transform==='rotate(180deg)';imgs.forEach(function(i){i.style.transform=r?'':'rotate(180deg)';});this.textContent=r?'\\u21BB Drehen':'\\u2716 Drehen';sessionStorage.setItem('ps_rot',r?'0':'1');">&#8635; Drehen</button>
 </div>
-<script>(function(){var c=document.querySelector('.card-map');if(!c)return;var bs=c.querySelectorAll('.hint-btn');if(sessionStorage.getItem('ps_pois')==='1'){var a=c.querySelector('img.allpois');if(a)a.style.display='block';if(bs[0])bs[0].textContent='\\u2716 POIs';}if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';if(bs[1])bs[1].textContent='\\u2716 Kontext';}})();</script>
+<script>(function(){var c=document.querySelector('.card-map');if(!c)return;var bs=c.querySelectorAll('.hint-btn');if(sessionStorage.getItem('ps_pois')==='1'){var a=c.querySelector('img.allpois');if(a)a.style.display='block';if(bs[0])bs[0].textContent='\\u2716 POIs';}if(sessionStorage.getItem('ps_ctx')==='1'){var x=c.querySelector('img.context');if(x)x.style.display='block';if(bs[1])bs[1].textContent='\\u2716 Kontext';}if(sessionStorage.getItem('ps_rot')==='1'){c.querySelectorAll('img').forEach(function(i){i.style.transform='rotate(180deg)';});if(bs[2])bs[2].textContent='\\u2716 Drehen';}})();</script>
 """
 
 
@@ -650,7 +656,8 @@ def generate_apkg_poi(d: POIDeck) -> None:
     deck_title = f"{region_label} {system_label} (Beta {today})"
 
     base = f"peak_soaring_{d.name}"
-    model_id = int(hashlib.sha256(f"{base}_poi_model".encode()).hexdigest()[:8], 16)
+    _MODEL_VER = 2
+    model_id = int(hashlib.sha256(f"{base}_poi_model_v{_MODEL_VER}".encode()).hexdigest()[:8], 16)
     deck_id = int(hashlib.sha256(f"{base}_poi_deck".encode()).hexdigest()[:8], 16)
 
     model = _poi_model(model_id, f"{region_label} {system_label}")
