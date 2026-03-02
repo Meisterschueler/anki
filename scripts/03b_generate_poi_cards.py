@@ -526,6 +526,13 @@ def generate_all_sub_regions(
         # basemap when the DEM is unavailable.
         sub_bm_path = sub_deck.output_images_dir / sub_deck.filename_basemap()
         sub_bm_rot_path = sub_deck.output_images_dir / sub_deck.filename_basemap_rot()
+
+        # Basemap variants: (filename method on parent, sub output path, gen function)
+        _bm_variants = [
+            ("filename_basemap",     sub_bm_path,     None),
+            ("filename_basemap_rot", sub_bm_rot_path, generate_raster_basemap_rot),
+        ]
+
         if force or not sub_bm_path.exists():
             if sub_deck.region.dem_tif.exists():
                 _generate_basemap(sub_deck, force=force)
@@ -535,37 +542,30 @@ def generate_all_sub_regions(
                               parent_deck.bbox_south, parent_deck.bbox_north)
                 sub_ext = (sub_deck.bbox_west, sub_deck.bbox_east,
                            sub_deck.bbox_south, sub_deck.bbox_north)
-                parent_bm = parent_deck.output_images_dir / parent_deck.filename_basemap()
-                crop_basemap_from_parent(
-                    parent_bm, parent_ext, sub_ext,
-                    sub_bm_path, tw, th,
-                )
-                # Rotated basemap: crop from parent rotated basemap
-                parent_bm_rot = parent_deck.output_images_dir / parent_deck.filename_basemap_rot()
-                crop_basemap_from_parent(
-                    parent_bm_rot, parent_ext, sub_ext,
-                    sub_bm_rot_path, tw, th,
-                    north_up=False,
-                )
+                for fn_name, sub_path, _ in _bm_variants:
+                    parent_bm = parent_deck.output_images_dir / getattr(parent_deck, fn_name)()
+                    crop_basemap_from_parent(
+                        parent_bm, parent_ext, sub_ext,
+                        sub_path, tw, th,
+                    )
         else:
             print(f"[BASEMAP] Already exists: {sub_bm_path.name}")
-            # Still ensure rotated basemap exists
-            if force or not sub_bm_rot_path.exists():
-                if sub_deck.region.dem_tif.exists():
-                    generate_raster_basemap_rot(sub_deck, sub_bm_rot_path,
-                                                force=force)
-                else:
-                    tw, th = _compute_pixel_dims(sub_deck)
-                    parent_ext = (parent_deck.bbox_west, parent_deck.bbox_east,
-                                  parent_deck.bbox_south, parent_deck.bbox_north)
-                    sub_ext = (sub_deck.bbox_west, sub_deck.bbox_east,
-                               sub_deck.bbox_south, sub_deck.bbox_north)
-                    parent_bm_rot = parent_deck.output_images_dir / parent_deck.filename_basemap_rot()
-                    crop_basemap_from_parent(
-                        parent_bm_rot, parent_ext, sub_ext,
-                        sub_bm_rot_path, tw, th,
-                        north_up=False,
-                    )
+            # Still ensure all rotated basemaps exist
+            for fn_name, sub_path, gen_func in _bm_variants[1:]:
+                if force or not sub_path.exists():
+                    if sub_deck.region.dem_tif.exists():
+                        gen_func(sub_deck, sub_path, force=force)
+                    else:
+                        tw, th = _compute_pixel_dims(sub_deck)
+                        parent_ext = (parent_deck.bbox_west, parent_deck.bbox_east,
+                                      parent_deck.bbox_south, parent_deck.bbox_north)
+                        sub_ext = (sub_deck.bbox_west, sub_deck.bbox_east,
+                                   sub_deck.bbox_south, sub_deck.bbox_north)
+                        parent_bm = parent_deck.output_images_dir / getattr(parent_deck, fn_name)()
+                        crop_basemap_from_parent(
+                            parent_bm, parent_ext, sub_ext,
+                            sub_path, tw, th,
+                        )
 
         # Generate all overlay images for the sub-region deck
         # (skip basemap — already handled above)

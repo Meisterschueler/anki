@@ -103,7 +103,7 @@ def _generate_basemap(d: Deck, force: bool = False) -> None:
     basemap_path = d.output_images_dir / d.filename_basemap()
     generate_raster_basemap(d, basemap_path, force=force)
 
-    # Rotated basemap (hillshade azimuth 135°) for the Drehen button
+    # Rotated basemap (different hillshade azimuth) for the rotation button
     basemap_rot_path = d.output_images_dir / d.filename_basemap_rot()
     generate_raster_basemap_rot(d, basemap_rot_path, force=force)
 

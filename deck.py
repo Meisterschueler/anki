@@ -73,7 +73,7 @@ QMARK_MIN_RADIUS_ABS = 0.008         # absolute minimum circle radius (degrees)
 
 # ─── Hillshade ────────────────────────────────────────────────────────────────
 HILLSHADE_AZIMUTH = 315
-HILLSHADE_AZIMUTH_ROT = 135               # flipped azimuth for 180°-rotated basemap
+HILLSHADE_AZIMUTH_ROT = 135               # azimuth for 180° map rotation (south-up)
 HILLSHADE_ALTITUDE = 45
 HILLSHADE_VERT_EXAG = 0.05
 HILLSHADE_BLEND_MODE = "soft"
@@ -308,7 +308,7 @@ class BaseDeck:
         return f"{self.prefix}_basemap.webp"
 
     def filename_basemap_rot(self) -> str:
-        """Generate filename for rotated basemap (hillshade azimuth 135°)."""
+        """Generate filename for 180° rotated basemap (hillshade azimuth 135°)."""
         return f"{self.prefix}_basemap_rot.webp"
 
 

@@ -605,13 +605,13 @@ def generate_raster_basemap_rot(
     output_path: Path,
     force: bool = False,
 ) -> None:
-    """Render a rotated basemap (hillshade azimuth 135°).
+    """Render a basemap with hillshade azimuth 135° (for 180° map rotation).
 
     Reuses the cached lakes/rivers/ocean-mask layers from the normal
-    basemap build — only the hillshade is re-rendered with flipped azimuth.
-    The final image is rotated 180° (south-up) and saved with a compass
-    needle pointing south.  In Anki the image is displayed as-is (no CSS
-    rotation needed) — the Drehen button simply swaps basemap ↔ basemap_rot.
+    basemap build — only the hillshade is re-rendered with the rotated
+    azimuth.  The image is stored **north-up** (no pre-rotation).
+    CSS ``transform: rotate(180deg)`` in the Anki template handles the
+    visual rotation.
     """
     from PIL import Image
 
@@ -662,14 +662,13 @@ def generate_raster_basemap_rot(
     base = Image.alpha_composite(base, river_layer)
 
     final = base.convert("RGB")
-    # Rotate 180° so the image is stored south-up
-    final = final.transpose(Image.Transpose.ROTATE_180)
     final.save(str(output_path), "WEBP", quality=D.BASEMAP_WEBP_QUALITY, method=6)
 
     size_kb = output_path.stat().st_size / 1024
     w_px, h_px = _compute_pixel_dims(d)
     print(f"[BASEMAP-ROT] Done: {output_path.name} "
           f"({size_kb:,.0f} KB, {w_px}x{h_px} px)")
+
 
 
 # ===========================================================================
