@@ -969,7 +969,7 @@ def main():
 
     if isinstance(d, POIDeck):
         # Check for multi-deck config
-        multi_key = f"{args.region}_pois"
+        multi_key = f"{args.region}_{actual_system}"
         if multi_key in D.POI_MULTI_DECK:
             cfg = D.POI_MULTI_DECK[multi_key]
             labels = [lbl for _, lbl in cfg.get("sub_regions", [])] + \

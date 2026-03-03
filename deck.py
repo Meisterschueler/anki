@@ -454,8 +454,8 @@ REGION_DEFAULTS: Dict[str, str] = {
 
 # Valid (region, system) pairs
 VALID_COMBINATIONS: Dict[str, List[str]] = {
-    "ostalpen":  ["ave84", "soiusa_sz", "soiusa_sts", "pois"],
-    "westalpen": ["soiusa_sz", "soiusa_sts", "pois"],
+    "ostalpen":  ["ave84", "soiusa_sz", "soiusa_sts", "pois", "landewiesen"],
+    "westalpen": ["soiusa_sz", "soiusa_sts", "pois", "landewiesen"],
 }
 
 # Subdeck merge: when building the first system, both are packed into one
@@ -599,27 +599,38 @@ def _get_poi_classification(region_name: str, system_name: str) -> POIClassifica
     POIs are filtered by the region's bounding box, so shared POIs
     in the Ost-/Westalpen overlap zone appear in both decks.
     """
-    if system_name != "pois":
+    if system_name not in _POI_SYSTEMS:
         raise ValueError(f"Not a POI system: {system_name!r}")
 
     region = _get_region(region_name)
-    from classifications.pois import pois_for_region, CATEGORY_STYLE
-    filtered = pois_for_region(region)
+
+    if system_name == "landewiesen":
+        from classifications.landewiesen import landewiesen_for_region
+        from classifications.landewiesen import CATEGORY_STYLE
+        filtered = landewiesen_for_region(region)
+        cls_name = "landewiesen"
+        cls_title = "Aussenlandewiesen"
+    else:
+        from classifications.pois import pois_for_region, CATEGORY_STYLE  # type: ignore[no-redef]
+        filtered = pois_for_region(region)
+        cls_name = "pois"
+        cls_title = "Peak Soaring POIs"
+
     if not filtered:
         raise ValueError(
             f"No POIs within bbox of region {region_name!r}. "
             f"Add POIs with coordinates inside the region's bounding box."
         )
     return POIClassification(
-        name="pois",
-        title="Peak Soaring POIs",
+        name=cls_name,
+        title=cls_title,
         pois=filtered,
         category_style=CATEGORY_STYLE,
     )
 
 
 # ── POI deck detector ────────────────────────────────────────────────────────
-_POI_SYSTEMS = {"pois"}
+_POI_SYSTEMS = {"pois", "landewiesen"}
 
 
 def _make_sub_region_region(parent_region: Region, sub: SubRegion) -> Region:
