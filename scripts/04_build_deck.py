@@ -552,6 +552,23 @@ _POI_APKG_CSS = _BASE_CSS + """\
     color: #555;
     font-size: 15px;
 }
+.cupx-pics {
+    margin: 10px auto;
+    max-width: 100%;
+    text-align: center;
+}
+.cupx-pics img {
+    display: block;
+    max-width: 100%;
+    margin: 6px auto;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+}
+.cupx-pics .pic-label {
+    font-size: 11px;
+    color: #888;
+    margin-bottom: 4px;
+}
 """
 
 # Template: "Welcher Gipfel/Pass/... ist das?"  (identify a highlighted POI)
@@ -589,6 +606,16 @@ _POI_TMPL_IDENTIFY_BACK = (
     '<button class="hint-btn" style="left:80px;" onclick="var i=this.parentNode.querySelector(\'img.context\');var v=i.style.display!==\'block\';i.style.display=v?\'block\':\'none\';this.textContent=v?\'\\u2716 Kontext\':\'\\u25a6 Kontext\';sessionStorage.setItem(\'ps_ctx\',v?\'1\':\'0\');">&#9638; Kontext</button>\n'
     '<div class="compass-btn" onclick="' + _COMPASS_ONCLICK + '">' + _NORDPFEIL_SVG + '</div>\n'
     '</div>\n'
+    '{{#OsmPic}}\n'
+    '<div class="cupx-pics">\n'
+    '<div class="pic-label">Satellitenbild</div>\n'
+    '{{OsmPic}}\n'
+    '{{#FieldPic}}\n'
+    '<div class="pic-label">Feldfoto</div>\n'
+    '{{FieldPic}}\n'
+    '{{/FieldPic}}\n'
+    '</div>\n'
+    '{{/OsmPic}}\n'
     '<script>' + _SESSION_RESTORE_POI + '</script>\n'
 )
 
@@ -603,6 +630,8 @@ def _poi_model(model_id: int, model_name: str) -> genanki.Model:
         Basemap, BasemapRot,
         AllPois, Highlight, BackOverlay, Context,
         Thumbnail  (empty string for full-map decks, filename for sub-regions)
+        OsmPic     (CUPX satellite image, Landewiesen only)
+        FieldPic   (CUPX field photo, Landewiesen only — may be empty)
     """
     return genanki.Model(
         model_id,
@@ -619,6 +648,8 @@ def _poi_model(model_id: int, model_name: str) -> genanki.Model:
             {"name": "BackOverlay"},
             {"name": "Context"},
             {"name": "Thumbnail"},
+            {"name": "OsmPic"},
+            {"name": "FieldPic"},
         ],
         templates=[
             {
@@ -744,6 +775,20 @@ def _build_poi_notes(
         if extra_tags:
             tags.extend(extra_tags)
 
+        # CUPX pics (Landewiesen only — empty for other POI decks)
+        osm_pic_html = ""
+        field_pic_html = ""
+        if hasattr(poi, 'pics') and poi.pics:
+            from classifications.landewiesen import pic_path
+            for pic_name in poi.pics:
+                pp = pic_path(pic_name)
+                if pp.exists():
+                    media_files.append(str(pp))
+                    if '_osm' in pic_name:
+                        osm_pic_html = f'<img src="{pic_name}">'
+                    else:
+                        field_pic_html = f'<img src="{pic_name}">'
+
         note = genanki.Note(
             model=model,
             fields=[
@@ -758,6 +803,8 @@ def _build_poi_notes(
                 f'<img class="overlay" src="{back_file}">',
                 layers["context_html"],
                 f'<img class="thumbnail" src="{thumbnail_file}">' if thumbnail_file else "",
+                osm_pic_html,
+                field_pic_html,
             ],
             tags=tags,
         )
@@ -786,7 +833,7 @@ def generate_apkg_poi(d: POIDeck) -> None:
     deck_title = f"{region_label} {system_label} (Beta {today})"
 
     base = f"peak_soaring_{d.name}"
-    _MODEL_VER = 5
+    _MODEL_VER = 6
     model_id = int(hashlib.sha256(f"{base}_poi_model_v{_MODEL_VER}".encode()).hexdigest()[:8], 16)
     deck_id = int(hashlib.sha256(f"{base}_poi_deck".encode()).hexdigest()[:8], 16)
 
@@ -844,7 +891,7 @@ def generate_apkg_poi_multi(d: POIDeck, region_name: str) -> None:
     # Bump _MODEL_VER when fields or templates change to force Anki
     # to create a fresh note-type on re-import (otherwise the old
     # model is kept and new fields like Thumbnail are invisible).
-    _MODEL_VER = 5
+    _MODEL_VER = 6
     model_id = int(hashlib.sha256(
         f"{base}_multi_model_v{_MODEL_VER}".encode()
     ).hexdigest()[:8], 16)
