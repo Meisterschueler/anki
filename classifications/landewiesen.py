@@ -23,6 +23,7 @@ CUP coordinate format: DDMM.MMMN / DDDMM.MMME → WGS84 decimal.
 
 import csv
 import io
+import math
 import re
 import struct
 import zipfile
@@ -35,6 +36,21 @@ from models import POI
 # ═══════════════════════════════════════════════════════════════════════════════
 # CONFIG
 # ═══════════════════════════════════════════════════════════════════════════════
+
+# Flugplatz Königsdorf (EDNK) — reference point for sorting by distance
+# Located between Geretsried and Bad Tölz, ~20 km S of Benediktenwand
+_KOENIGSDORF_LAT = 47.820
+_KOENIGSDORF_LON = 11.480
+
+# Aérodrome de Puimoisson (LFGEN) — reference for Westalpen sorting
+_PUIMOISSON_LAT = 43.883
+_PUIMOISSON_LON = 6.167
+
+# Region name → reference airfield
+_SORT_ORIGIN = {
+    "ostalpen":  (_KOENIGSDORF_LAT, _KOENIGSDORF_LON),
+    "westalpen": (_PUIMOISSON_LAT, _PUIMOISSON_LON),
+}
 
 # ZIP file containing all CUPX archives
 _ZIP_FILE = Path(__file__).parent.parent / "data" / "streckenflug-at_landewiesen_20260303.zip"
@@ -297,13 +313,32 @@ def _load_all_landewiesen() -> List[POI]:
 ALL_LANDEWIESEN: List[POI] = _load_all_landewiesen()
 
 
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance in km between two WGS84 points."""
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (math.sin(dlat / 2) ** 2
+         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
+         * math.sin(dlon / 2) ** 2)
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
 def landewiesen_for_region(region) -> List[POI]:
-    """Return outlanding fields within the region's bounding box."""
-    return [
+    """Return outlanding fields within the region's bounding box,
+    sorted by distance to the region's reference airfield (nearest first).
+
+    Ostalpen  → Flugplatz Königsdorf
+    Westalpen → Aérodrome de Puimoisson
+    """
+    filtered = [
         p for p in ALL_LANDEWIESEN
         if region.bbox_south <= p.lat <= region.bbox_north
         and region.bbox_west <= p.lon <= region.bbox_east
     ]
+    origin = _SORT_ORIGIN.get(region.name, (_KOENIGSDORF_LAT, _KOENIGSDORF_LON))
+    filtered.sort(key=lambda p: _haversine_km(origin[0], origin[1], p.lat, p.lon))
+    return filtered
 
 
 def pic_path(filename: str) -> Path:
