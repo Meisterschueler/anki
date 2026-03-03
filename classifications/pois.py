@@ -20,8 +20,8 @@ import math
 from models import POI
 
 # Reference airfields for sorting by distance (nearest first)
-_KOENIGSDORF_LAT, _KOENIGSDORF_LON = 47.820, 11.480   # EDNK
-_PUIMOISSON_LAT, _PUIMOISSON_LON   = 43.883,  6.167   # LFGEN
+_KOENIGSDORF_LAT, _KOENIGSDORF_LON = 47.820, 11.480   # Flugplatz Königsdorf
+_PUIMOISSON_LAT, _PUIMOISSON_LON   = 43.883,  6.167   # Aérodrome de Puimoisson
 _SORT_ORIGIN = {
     "ostalpen":  (_KOENIGSDORF_LAT, _KOENIGSDORF_LON),
     "westalpen": (_PUIMOISSON_LAT, _PUIMOISSON_LON),

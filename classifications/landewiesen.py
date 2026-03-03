@@ -37,12 +37,12 @@ from models import POI
 # CONFIG
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Flugplatz Königsdorf (EDNK) — reference point for sorting by distance
-# Located between Geretsried and Bad Tölz, ~20 km S of Benediktenwand
+# Flugplatz Königsdorf — reference point for sorting by distance
+# Located between Geretsried and Bad Tölz, ~20 km N of Benediktenwand
 _KOENIGSDORF_LAT = 47.820
 _KOENIGSDORF_LON = 11.480
 
-# Aérodrome de Puimoisson (LFGEN) — reference for Westalpen sorting
+# Aérodrome de Puimoisson — reference for Westalpen sorting
 _PUIMOISSON_LAT = 43.883
 _PUIMOISSON_LON = 6.167
 
