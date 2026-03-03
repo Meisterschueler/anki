@@ -15,7 +15,28 @@ A few POIs without reliable source are marked with '# approx' or
 '# not found on OSM' inline.
 """
 
+import math
+
 from models import POI
+
+# Reference airfields for sorting by distance (nearest first)
+_KOENIGSDORF_LAT, _KOENIGSDORF_LON = 47.820, 11.480   # EDNK
+_PUIMOISSON_LAT, _PUIMOISSON_LON   = 43.883,  6.167   # LFGEN
+_SORT_ORIGIN = {
+    "ostalpen":  (_KOENIGSDORF_LAT, _KOENIGSDORF_LON),
+    "westalpen": (_PUIMOISSON_LAT, _PUIMOISSON_LON),
+}
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance in km between two WGS84 points."""
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (math.sin(dlat / 2) ** 2
+         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
+         * math.sin(dlon / 2) ** 2)
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PEAKS  (78)
@@ -271,16 +292,23 @@ ALL_POIS = PEAKS + PASSES + TOWNS + VALLEYS + LAKES
 
 
 def pois_for_region(region) -> list:
-    """Return POIs whose coordinates fall within the region's bounding box.
+    """Return POIs within the region's bounding box, sorted by distance
+    to the region's reference airfield (nearest first).
+
+    Ostalpen  → Flugplatz Königsdorf
+    Westalpen → Aérodrome de Puimoisson
 
     POIs in the overlap zone between Ost- and Westalpen appear in both decks.
-    ``region`` must have bbox_south/north/west/east attributes (a Region instance).
+    ``region`` must have bbox_south/north/west/east and name attributes.
     """
-    return [
+    filtered = [
         p for p in ALL_POIS
         if region.bbox_south <= p.lat <= region.bbox_north
         and region.bbox_west <= p.lon <= region.bbox_east
     ]
+    origin = _SORT_ORIGIN.get(region.name, (_KOENIGSDORF_LAT, _KOENIGSDORF_LON))
+    filtered.sort(key=lambda p: _haversine_km(origin[0], origin[1], p.lat, p.lon))
+    return filtered
 
 
 # ── Category display properties ──────────────────────────────────────────────
