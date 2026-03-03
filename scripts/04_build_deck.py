@@ -553,14 +553,18 @@ _POI_APKG_CSS = _BASE_CSS + """\
     font-size: 15px;
 }
 .cupx-pics {
-    margin: 10px auto;
-    max-width: 100%;
+    position: relative;
+    display: block;
+    line-height: normal;
+    margin: 8px 0 0 0;
     text-align: center;
 }
 .cupx-pics img {
+    position: relative;
     display: block;
-    max-width: 100%;
-    margin: 6px auto;
+    width: 100%;
+    height: auto;
+    margin: 6px 0;
     border-radius: 4px;
     border: 1px solid #ddd;
 }
