@@ -5,12 +5,18 @@ Parses the CUP waypoint data from the streckenflug.at ZIP archive
 and exposes outlanding fields as POI objects.
 
 Source: streckenflug-at_landewiesen_20260303.zip
-Format: ZIP → CUPX (inner ZIP) → POINTS.CUP (CSV)
+Format: ZIP → CUPX (inner ZIP) → POINTS.CUP (CSV) + Pics/*.jpg
 
 615 outlanding fields across the Alps:
   - 327 Kat A  (recommended)     — green markers
   - 288 Kat B  (emergency only)  — orange markers
   -  65 Airstrips (style=2)      — blue markers (subset of A/B)
+
+Each CUPX embeds JPG images (satellite + field photos) linked via
+the ``pics`` CSV field.  Python's ``zipfile`` cannot see them because
+the Central Directory only lists POINTS.CUP — the images are stored
+in Local File Headers preceded by a 256-byte CUPX header.  We parse
+them manually with ``struct``.
 
 CUP coordinate format: DDMM.MMMN / DDDMM.MMME → WGS84 decimal.
 """
@@ -18,9 +24,11 @@ CUP coordinate format: DDMM.MMMN / DDDMM.MMME → WGS84 decimal.
 import csv
 import io
 import re
+import struct
 import zipfile
+import zlib
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Tuple
 
 from models import POI
 
@@ -31,11 +39,104 @@ from models import POI
 # ZIP file containing all CUPX archives
 _ZIP_FILE = Path(__file__).parent.parent / "data" / "streckenflug-at_landewiesen_20260303.zip"
 
+# Directory where extracted CUPX images are cached
+_PICS_DIR = Path(__file__).parent.parent / "data" / "landewiesen_pics"
+
 # CUPX files relevant for Ost/Westalpen
 _CUPX_FILES = [
     "zentral_und_ostalpen_de.cupx",
     "westalpen_de.cupx",
 ]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RAW CUPX PARSER  (reads Local File Headers directly)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _parse_local_file_headers(data: bytes) -> List[dict]:
+    """Scan raw bytes for ZIP Local File Headers (PK\\x03\\x04).
+
+    Returns a list of dicts with keys: name, data (decompressed bytes).
+    Works around the broken Central Directory in streckenflug.at CUPX files.
+    """
+    entries: List[dict] = []
+    pos = 0
+    sig = b"PK\x03\x04"
+
+    while pos < len(data) - 30:
+        idx = data.find(sig, pos)
+        if idx == -1:
+            break
+
+        header = data[idx : idx + 30]
+        if len(header) < 30:
+            break
+
+        (_, _ver, _flags, method, _mt, _md,
+         _crc, comp_size, uncomp_size,
+         name_len, extra_len) = struct.unpack("<4sHHHHHIIIHH", header)
+
+        name = data[idx + 30 : idx + 30 + name_len].decode("utf-8", errors="replace")
+        data_start = idx + 30 + name_len + extra_len
+        raw = data[data_start : data_start + comp_size]
+
+        if method == 8:  # deflate
+            payload = zlib.decompress(raw, -15)
+        else:
+            payload = raw
+
+        entries.append({"name": name, "data": payload})
+        pos = data_start + comp_size
+        if pos <= idx:
+            pos = idx + 4  # safety: advance past current header
+
+    return entries
+
+
+def _extract_cupx(cupx_bytes: bytes) -> Tuple[str, Dict[str, bytes]]:
+    """Extract POINTS.CUP text and Pics/* images from raw CUPX bytes.
+
+    Returns (cup_csv_text, {pic_filename: jpg_bytes}).
+    """
+    entries = _parse_local_file_headers(cupx_bytes)
+
+    cup_text = ""
+    pics: Dict[str, bytes] = {}
+
+    for entry in entries:
+        name: str = entry["name"]
+        if name.upper().endswith(".CUP"):
+            cup_text = entry["data"].decode("utf-8-sig")
+        elif name.lower().startswith("pics/") and name.lower().endswith(".jpg"):
+            # Store with just the filename (no Pics/ prefix)
+            pic_name = name.split("/", 1)[1]
+            pics[pic_name] = entry["data"]
+
+    return cup_text, pics
+
+
+def _ensure_pics_extracted() -> None:
+    """Extract all CUPX images to _PICS_DIR (one-time, idempotent)."""
+    if not _ZIP_FILE.exists():
+        return
+
+    marker = _PICS_DIR / ".extracted"
+    if marker.exists():
+        return  # already done
+
+    _PICS_DIR.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(_ZIP_FILE) as outer_zip:
+        for cupx_name in _CUPX_FILES:
+            cupx_bytes = outer_zip.read(cupx_name)
+            _cup_text, pics = _extract_cupx(cupx_bytes)
+            for pic_name, jpg_data in pics.items():
+                dest = _PICS_DIR / pic_name
+                if not dest.exists():
+                    dest.write_bytes(jpg_data)
+
+    marker.write_text(f"extracted from {_ZIP_FILE.name}\n")
+    print(f"  Extracted {len(list(_PICS_DIR.glob('*.jpg')))} images → {_PICS_DIR}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -135,6 +236,10 @@ def _parse_cup_rows(cup_csv: str) -> List[POI]:
 
         subtitle = _build_subtitle(row)
 
+        # Parse pics field: "1_165_osm.jpg;2_186.jpg" → list
+        pics_raw = row.get("pics", "").strip()
+        pics_list = [p.strip() for p in pics_raw.split(";") if p.strip()] if pics_raw else []
+
         poi = POI(
             poi_id=code,
             name=name,
@@ -144,6 +249,7 @@ def _parse_cup_rows(cup_csv: str) -> List[POI]:
             elevation=elev,
             subtitle=subtitle,
             tags=[row.get("country", "").strip()],
+            pics=pics_list,
         )
         pois.append(poi)
 
@@ -155,12 +261,19 @@ def _parse_cup_rows(cup_csv: str) -> List[POI]:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _load_all_landewiesen() -> List[POI]:
-    """Read all outlanding waypoints from the streckenflug.at ZIP."""
+    """Read all outlanding waypoints from the streckenflug.at ZIP.
+
+    Uses raw Local File Header parsing to access both POINTS.CUP and
+    the embedded Pics/*.jpg images that Python's zipfile cannot see.
+    """
     if not _ZIP_FILE.exists():
         raise FileNotFoundError(
             f"Landewiesen ZIP not found: {_ZIP_FILE}\n"
             "Download from streckenflug.at and place in data/"
         )
+
+    # Extract images to disk (idempotent)
+    _ensure_pics_extracted()
 
     seen_codes: set = set()
     all_pois: List[POI] = []
@@ -168,13 +281,12 @@ def _load_all_landewiesen() -> List[POI]:
     with zipfile.ZipFile(_ZIP_FILE) as outer_zip:
         for cupx_name in _CUPX_FILES:
             cupx_bytes = outer_zip.read(cupx_name)
-            with zipfile.ZipFile(io.BytesIO(cupx_bytes)) as cupx_zip:
-                cup_data = cupx_zip.read("POINTS.CUP").decode("utf-8-sig")
-                pois = _parse_cup_rows(cup_data)
-                for p in pois:
-                    if p.poi_id not in seen_codes:
-                        seen_codes.add(p.poi_id)
-                        all_pois.append(p)
+            cup_text, _pics = _extract_cupx(cupx_bytes)
+            pois = _parse_cup_rows(cup_text)
+            for p in pois:
+                if p.poi_id not in seen_codes:
+                    seen_codes.add(p.poi_id)
+                    all_pois.append(p)
 
     # Sort by code for deterministic ordering
     all_pois.sort(key=lambda p: p.poi_id)
@@ -192,6 +304,11 @@ def landewiesen_for_region(region) -> List[POI]:
         if region.bbox_south <= p.lat <= region.bbox_north
         and region.bbox_west <= p.lon <= region.bbox_east
     ]
+
+
+def pic_path(filename: str) -> Path:
+    """Return the absolute path to an extracted CUPX image."""
+    return _PICS_DIR / filename
 
 
 # ── Category display properties ──────────────────────────────────────────────

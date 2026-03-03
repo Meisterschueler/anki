@@ -27,3 +27,4 @@ class POI:
     elevation: Optional[int] = None   # Metres (peaks, passes)
     subtitle: Optional[str] = None    # e.g. "Mittagsspitze" for Hirschberg
     tags: List[str] = field(default_factory=list)  # Anki tags for filtering
+    pics: List[str] = field(default_factory=list)  # Embedded image filenames
