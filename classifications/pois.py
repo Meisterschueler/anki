@@ -61,7 +61,7 @@ PEAKS = [
     POI("peak_15", "Östl. Karwendelspitze",        "peak", 47.44486, 11.42143, 2537),
     POI("peak_16", "Bettelwurf",                   "peak", 47.34423, 11.51987, 2726),
     POI("peak_17", "Hafelekar",                    "peak", 47.31278, 11.38639, 2334),
-    POI("peak_18", "Brandjoch",                    "peak", 47.29530, 11.33560, 2599,
+    POI("peak_18", "Brandjoch",                    "peak", 47.30291, 11.33921, 2599,
         subtitle="Hintere Brandjochspitze"),
     POI("peak_19", "Stanser Joch",                 "peak", 47.39944, 11.69889, 2102),
     POI("peak_20", "Bärenkopf",                    "peak", 47.41479, 11.71227, 1991),
@@ -126,6 +126,7 @@ PEAKS = [
     POI("peak_79", "Hochnissl",                    "peak", 47.36694, 11.61806, 2547),
     POI("peak_80", "Seeberg",                      "peak", 47.66417, 11.99778, 1538),
     POI("peak_81", "Maroldschneid",                "peak", 47.64361, 11.96667, 1688),
+    POI("peak_82", "Patscherkofel",                "peak", 47.20861, 11.46056, 2246),
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════════

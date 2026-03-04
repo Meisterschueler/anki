@@ -497,18 +497,24 @@ class SubRegion:
 
 # ── Sub-region definitions ────────────────────────────────────────────────────
 
+# Fraction of bbox extent to keep clear as margin on each edge of
+# sub-region maps, so POI markers don't end up behind Anki's answer
+# buttons or other UI chrome.
+SUB_REGION_EDGE_MARGIN_FRAC = 0.10
+
 SUB_REGIONS: Dict[str, List[SubRegion]] = {
     "ostalpen": [
         SubRegion(
             key="koenigsdorf",
             label="Königsdorf",
-            bbox_west=11.0, bbox_east=12.0,
+            bbox_west=10.8, bbox_east=12.3,
             bbox_south=47.23, bbox_north=47.78,
             cities=[
                 ("Kochel",        11.367, 47.659,  0.05,  0.02),
                 ("Bad Tölz",      11.556, 47.761,  0.05,  0.02),
                 ("Garmisch-P.",   11.096, 47.492,  0.05,  0.02),
                 ("Innsbruck",     11.394, 47.267,  0.05, -0.02),
+                ("Kufstein",      12.167, 47.583,  0.05,  0.02),
             ],
         ),
         SubRegion(
@@ -698,6 +704,9 @@ def get_sub_region_poi_deck(
 ) -> "POIDeck":
     """Build a POIDeck for a sub-region (zoomed bbox, filtered POIs).
 
+    POIs within ``SUB_REGION_EDGE_MARGIN_FRAC`` of any bbox edge are
+    excluded so they don't end up behind Anki's answer buttons.
+
     The returned deck shares output directory with the parent POI deck
     but has a unique filename prefix from the sub-region name.
     """
@@ -714,6 +723,27 @@ def get_sub_region_poi_deck(
 
     from classifications.pois import pois_for_region, CATEGORY_STYLE
     filtered = pois_for_region(sub_region)
+
+    # Exclude POIs too close to the bbox edges (Anki button clearance)
+    m = SUB_REGION_EDGE_MARGIN_FRAC
+    if m > 0:
+        lat_span = sub_region.bbox_north - sub_region.bbox_south
+        lon_span = sub_region.bbox_east - sub_region.bbox_west
+        inner_s = sub_region.bbox_south + lat_span * m
+        inner_n = sub_region.bbox_north - lat_span * m
+        inner_w = sub_region.bbox_west + lon_span * m
+        inner_e = sub_region.bbox_east - lon_span * m
+        before = len(filtered)
+        filtered = [
+            p for p in filtered
+            if inner_s <= p.lat <= inner_n
+            and inner_w <= p.lon <= inner_e
+        ]
+        dropped = before - len(filtered)
+        if dropped:
+            print(f"[SUB-REGION] {sub_region_key}: dropped {dropped} "
+                  f"edge POIs ({m:.0%} margin)")
+
     if not filtered:
         raise ValueError(f"No POIs within sub-region {sub_region_key!r}.")
 
@@ -733,6 +763,26 @@ def get_sub_region_poi_deck(
         output_csv_dir=output_dir,
         anki_csv_name=f"anki_{region_name}_pois",
     )
+
+
+def get_all_sub_region_poi_ids(region_name: str) -> set:
+    """Return the set of POI IDs that appear in any sub-region.
+
+    Used to exclude these POIs from the main / full-region deck so that
+    each POI only appears once — either in a sub-region deck or in the
+    category deck, but not both.
+    """
+    multi_cfg = POI_MULTI_DECK.get(f"{region_name}_pois")
+    if not multi_cfg:
+        return set()
+    ids: set = set()
+    for sub_key, _ in multi_cfg.get("sub_regions", []):
+        try:
+            sub_deck = get_sub_region_poi_deck(region_name, sub_key)
+            ids.update(p.poi_id for p in sub_deck.pois)
+        except ValueError:
+            pass
+    return ids
 
 
 def _merge_key_for(region_name: str, system_name: str) -> Optional[str]:

@@ -956,6 +956,12 @@ def generate_apkg_poi_multi(d: POIDeck, region_name: str) -> None:
         anki_subdecks.append(anki_deck)
 
     # ── B) Category subdecks (full map, filter by POI type) ──────────────
+    # Exclude POIs that already appear in a sub-region deck
+    sub_poi_ids = D.get_all_sub_region_poi_ids(region_name)
+    if sub_poi_ids:
+        print(f"[APKG-POI] Excluding {len(sub_poi_ids)} sub-region POIs "
+              f"from category decks")
+
     # Collect full-region shared layers once
     full_media: list[str] = []
     full_layers = _collect_shared_layers(d, full_media)
@@ -973,7 +979,8 @@ def generate_apkg_poi_multi(d: POIDeck, region_name: str) -> None:
 
         anki_deck = genanki.Deck(subdeck_id, subdeck_title)
 
-        cat_pois = d.poi_classification.pois_by_category(cat_key)
+        cat_pois = [p for p in d.poi_classification.pois_by_category(cat_key)
+                     if p.poi_id not in sub_poi_ids]
         if not cat_pois:
             print(f"[APKG-POI]   {cat_label}: 0 POIs (skipped)")
             continue

@@ -147,10 +147,11 @@ def _render_poi_marker(ax, poi: POI, style: dict, zorder: int = 10,
 
 
 def render_all_pois(ax, d: POIDeck, label_fontsize: float = 4.0,
-                    label_alpha: float = 0.7, skip_poi_id: Optional[str] = None):
+                    label_alpha: float = 0.7, skip_poi_id: Optional[str] = None,
+                    pois=None):
     """Render all POI markers with optional small labels."""
     valley_polys = _get_valley_polygons(d)
-    for poi in d.pois:
+    for poi in (pois if pois is not None else d.pois):
         if poi.poi_id == skip_poi_id:
             continue
         style = d.category_style.get(poi.category, {})
@@ -333,12 +334,12 @@ def generate_partition(d: POIDeck, output_path) -> None:
     plt.close(fig)
 
 
-def generate_all_pois_overlay(d: POIDeck, output_path) -> None:
+def generate_all_pois_overlay(d: POIDeck, output_path, pois=None) -> None:
     """Shared overlay with all POI markers + small labels (transparent bg)."""
     fig, ax = create_figure(d)
     ax.set_facecolor("none")
     ax.patch.set_alpha(0.0)
-    render_all_pois(ax, d, label_fontsize=3.5, label_alpha=0.5)
+    render_all_pois(ax, d, label_fontsize=3.5, label_alpha=0.5, pois=pois)
     save_figure(fig, output_path, overlay=True)
     plt.close(fig)
 
@@ -393,7 +394,7 @@ def generate_all(d: POIDeck, pois=None, force=False):
     all_pois_path = d.output_images_dir / d.filename_all_pois_overlay(".webp")
     if force or not all_pois_path.exists():
         print(f"  [{count}/{total}] All-POIs overlay")
-        generate_all_pois_overlay(d, all_pois_path)
+        generate_all_pois_overlay(d, all_pois_path, pois=pois)
     else:
         print(f"  [{count}/{total}] Skip (exists): {all_pois_path.name}")
 
@@ -609,8 +610,21 @@ def main():
             except KeyError:
                 print(f"[WARN] Unknown POI ID: {i}")
 
+    # Exclude sub-region POIs from the main / full-region deck so that
+    # each POI only appears once (either in a sub-region or category deck).
+    if pois is None and not args.ids:
+        sub_poi_ids = D.get_all_sub_region_poi_ids(args.region)
+        if sub_poi_ids:
+            main_pois = [p for p in d.pois if p.poi_id not in sub_poi_ids]
+            print(f"[POI-CARDS] Excluding {len(sub_poi_ids)} sub-region POIs "
+                  f"from main deck ({len(main_pois)} remaining)")
+        else:
+            main_pois = None
+    else:
+        main_pois = pois
+
     # Generate main deck images
-    generate_all(d, pois=pois, force=args.force)
+    generate_all(d, pois=main_pois, force=args.force)
 
     # Generate sub-region images if configured (POI_MULTI_DECK)
     if not args.ids:
