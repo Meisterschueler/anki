@@ -3,14 +3,14 @@ Peak Soaring POIs — Points of Interest for glider pilots
 =========================================================
 Based on the book "Peak Soaring" by Benjamin Bachmaier.
 
-209 POIs across the Alps:
-  - 78 peaks  (▲)
+214 POIs across the Alps:
+  - 81 peaks  (▲)
   - 59 passes (⬤)
-  - 22 valleys (◆)
+  - 24 valleys (◆)
   - 43 towns  (■)
   -  7 lakes  (⬡)
 
-Coordinates verified against Wikipedia / OpenStreetMap (June 2025).
+Coordinates verified against Wikipedia / OpenStreetMap (March 2026).
 A few POIs without reliable source are marked with '# approx' or
 '# not found on OSM' inline.
 """
@@ -39,7 +39,7 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PEAKS  (78)
+# PEAKS  (81)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 PEAKS = [
@@ -103,18 +103,18 @@ PEAKS = [
     POI("peak_56", "Grand Bérard",                 "peak", 44.44973,  6.66027, 3046),
     POI("peak_57", "Dormillouse",                  "peak", 44.96559,  6.71314, 2510),
     POI("peak_58", "Chapeau de Gendarme",          "peak", 44.65000,  6.30000, 2682),  # not found on OSM
-    POI("peak_59", "Les Trois Évêchés",            "peak", 44.28914, 6.53410, 2818),
+    POI("peak_59", "Les Trois Évêchés",            "peak", 44.28914,  6.53410, 2818),
     POI("peak_60", "Glandasse",                    "peak", 44.74189,  5.46343, 2041),
     POI("peak_61", "Merlu",                        "peak", 44.48777,  5.25752, 1540),
     POI("peak_62", "Pic de Bure",                  "peak", 44.62666,  5.93508, 2709),
     POI("peak_63", "Saint-Apôtre",                 "peak", 44.54085,  5.74450, 1491),
     POI("peak_64", "Montagne de Saint-Genis",      "peak", 44.39140,  5.83750, 1432),
     POI("peak_65", "Arambre",                      "peak", 44.43020,  5.74519, 1444),
-    POI("peak_66", "Montagne de Chabre",           "peak", 44.26583, 5.64278, 1393),
+    POI("peak_66", "Montagne de Chabre",           "peak", 44.26583,  5.64278, 1393),
     POI("peak_67", "Sommet de Bluye",              "peak", 44.23060,  5.25464, 1120),
     POI("peak_68", "Pic du Comte",                 "peak", 44.19779,  5.23966, 1154),
     POI("peak_69", "Mont Ventoux",                 "peak", 44.17396,  5.27840, 1909),
-    POI("peak_70", "Montagne de Lure",             "peak", 44.12333, 5.80278, 1826),
+    POI("peak_70", "Montagne de Lure",             "peak", 44.12333,  5.80278, 1826),
     POI("peak_71", "Montagne de Jouère",           "peak", 44.27440,  6.10581, 1886),
     POI("peak_72", "Montagne de Gache",            "peak", 44.23391,  5.98769, 1357),
     POI("peak_73", "Blayeul",                      "peak", 44.24681,  6.31178, 2189),
@@ -123,6 +123,9 @@ PEAKS = [
     POI("peak_76", "Carton",                       "peak", 44.11407,  6.68163, 2123),
     POI("peak_77", "Cheval Blanc",                 "peak", 44.12701,  6.42381, 2323),
     POI("peak_78", "Serre de Montdenier",          "peak", 43.89788,  6.25498, 1750),
+    POI("peak_79", "Hochnissl",                    "peak", 47.36694, 11.61806, 2547),
+    POI("peak_80", "Seeberg",                      "peak", 47.66417, 11.99778, 1538),
+    POI("peak_81", "Maroldschneid",                "peak", 47.64361, 11.96667, 1688),
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -168,7 +171,7 @@ PASSES = [
     POI("pass_36", "Holzleitensattel",             "pass", 47.35000, 10.93330, 1126),
     POI("pass_37", "Mädelejoch",                   "pass", 47.32500, 10.36670, 1974),
     POI("pass_38", "Arlbergpass",                  "pass", 47.12970, 10.21390, 1793),
-    POI("pass_39", "Flüelapass",                   "pass", 46.74720, 9.94720, 2383),
+    POI("pass_39", "Flüelapass",                   "pass", 46.74720,  9.94720, 2383),
     POI("pass_40", "Bieler Höhe",                  "pass", 46.91810, 10.09310, 2037),
     POI("pass_41", "Glaubenbielenpass",            "pass", 46.81881,  8.09317, 1611),
     POI("pass_42", "Brünigpass",                   "pass", 46.75640,  8.13760, 1008),
@@ -206,7 +209,7 @@ TOWNS = [
     POI("town_08", "Schluderns",                   "town", 46.66170, 10.58330),
     POI("town_09", "Saalfelden",                   "town", 47.42640, 12.84890),
     POI("town_10", "Kufstein",                     "town", 47.58330, 12.16670),
-    POI("town_11", "Erl",                          "town", 47.63330, 12.18330),
+    POI("town_11", "Erl",                          "town", 47.68167, 12.18083),
     POI("town_12", "Bad Reichenhall",              "town", 47.72670, 12.87670),
     POI("town_13", "Salzburg",                     "town", 47.80950, 13.05500),
     POI("town_14", "Bischofshofen",                "town", 47.41670, 13.21670),
@@ -220,7 +223,7 @@ TOWNS = [
     POI("town_22", "Kochel",                       "town", 47.65920, 11.36750),
     POI("town_23", "Garmisch-Partenkirchen",       "town", 47.49170, 11.09580),
     POI("town_24", "Telfs",                        "town", 47.30690, 11.07060),
-    POI("town_25", "Vorderriss",                   "town", 47.49170, 11.42500),
+    POI("town_25", "Vorderriss",                   "town", 47.55889, 11.43611),
     POI("town_26", "Benediktbeuern",               "town", 47.70830, 11.40280),
     POI("town_27", "Bad Tölz",                     "town", 47.76060, 11.55610),
     POI("town_28", "Spitzing",                     "town", 47.66170, 11.88580),
@@ -242,7 +245,7 @@ TOWNS = [
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# VALLEYS  (22)  — centroid coordinates; actual polygons from OSM later
+# VALLEYS  (24)  — centroid coordinates; actual polygons from OSM later
 # ═══════════════════════════════════════════════════════════════════════════════
 
 VALLEYS = [
@@ -268,6 +271,8 @@ VALLEYS = [
     POI("valley_20", "Mattertal",                  "valley", 46.10000,  7.78000),
     POI("valley_21", "Aostatal",                   "valley", 45.73000,  7.32000),
     POI("valley_22", "Baronnies",                  "valley", 44.27680,  5.27480),
+    POI("valley_23", "Schachen",                   "valley", 47.41944, 11.11278),
+    POI("valley_24", "Risstal",                    "valley", 47.46103, 11.51196),
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -331,9 +336,6 @@ CATEGORY_STYLE = {
 #
 # ── Namensabweichungen ──────────────────────────────────────────────────────
 #   Buch                    → OSM / hier verwendet       Anmerkung
-#   "Nochspitze" (2547 m)  → "Nockspitze" (2404 m)     Vermutlich Tippfehler im Buch;
-#                                                         Nockspitze/Saile bei Innsbruck;
-#                                                         ENTFERNT — nicht im Buch bestätigt
 #   "Hohe Kiste"            → "Hohe Kisten"              Plural auf OSM (NOT FOUND bei Nominatim)
 #   "Volldöpp" (1509 m)     → "Voldöppberg"              Buch nutzt Ortsname statt Gipfelname
 #   "Pass Turn"             → "Pass Thurn"               Tippfehler im Buch (fehlendes 'h')
@@ -344,7 +346,6 @@ CATEGORY_STYLE = {
 #   Peak                    Buch     OSM       Δ         Anmerkung
 #   Hafelekar               3599 m   2334 m  −1265 m    Offensichtlicher Druckfehler im Buch
 #   Hirschberg              1660 m   1670 m    +10 m    Mittagsspitze; OSM-Wert übernommen
-#   Nockspitze (entfernt)   2547 m   2404 m   −143 m    Nockspitze (Saile); Buch evtl. andere Spitze
 #
 # ── Koordinatenabweichungen ─────────────────────────────────────────────────
 #   Peak                    Buch/Nominatim lat,lon         Hier verwendet
