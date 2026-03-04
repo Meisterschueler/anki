@@ -256,6 +256,15 @@ def _parse_cup_rows(cup_csv: str) -> List[POI]:
         pics_raw = row.get("pics", "").strip()
         pics_list = [p.strip() for p in pics_raw.split(";") if p.strip()] if pics_raw else []
 
+        # Runway heading (degrees, 0-360) — used for rotated airstrip marker
+        rwdir = row.get("rwdir", "").strip()
+        heading = None
+        if rwdir and rwdir not in ("0", "000"):
+            try:
+                heading = int(rwdir)
+            except ValueError:
+                pass
+
         poi = POI(
             poi_id=code,
             name=name,
@@ -264,6 +273,7 @@ def _parse_cup_rows(cup_csv: str) -> List[POI]:
             lon=lon,
             elevation=elev,
             subtitle=subtitle,
+            heading=heading,
             tags=[row.get("country", "").strip()],
             pics=pics_list,
         )
@@ -352,18 +362,18 @@ CATEGORY_STYLE = {
         "marker": "^",
         "color": "#27AE60",
         "size": 6,
-        "label": "Kat A",
+        "label": "Landefeld Kat A",
     },
     "landefeld_b": {
         "marker": "v",
         "color": "#E67E22",
         "size": 6,
-        "label": "Kat B",
+        "label": "Landefeld Kat B",
     },
     "airstrip": {
-        "marker": "s",
+        "marker": "o",
         "color": "#2E86C1",
         "size": 5,
-        "label": "Airstrip",
+        "label": "Flugplatz",
     },
 }

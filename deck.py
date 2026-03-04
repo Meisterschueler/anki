@@ -548,11 +548,27 @@ POI_MULTI_DECK: Dict[str, dict] = {
         ],
         "categories": [
             # (category_key, subdeck_label)
-            ("peak",   "C Gipfel"),
-            ("pass",   "D Pässe"),
-            ("town",   "E Orte"),
-            ("valley", "F Täler"),
-            ("lake",   "G Seen"),
+            ("peak",        "C Gipfel"),
+            ("pass",        "D Pässe"),
+            ("town",        "E Orte"),
+            ("valley",      "F Täler"),
+            ("lake",        "G Seen"),
+            ("landefeld_a", "H Landefelder Kat A"),
+            ("landefeld_b", "I Landefelder Kat B"),
+            ("airstrip",    "J Flugplätze"),
+        ],
+    },
+    "westalpen_pois": {
+        "parent_title": "Westalpen Peak Soaring POIs",
+        "categories": [
+            ("peak",        "A Gipfel"),
+            ("pass",        "B Pässe"),
+            ("town",        "C Orte"),
+            ("valley",      "D Täler"),
+            ("lake",        "E Seen"),
+            ("landefeld_a", "F Landefelder Kat A"),
+            ("landefeld_b", "G Landefelder Kat B"),
+            ("airstrip",    "H Flugplätze"),
         ],
     },
 }
@@ -585,7 +601,7 @@ def _get_classification(region_name: str, system_name: str) -> Classification:
         ("westalpen", "soiusa_sts"): "classifications.westalpen_soiusa_sts",
     }
     key = (region_name, system_name)
-    if system_name == "pois":
+    if system_name in _POI_SYSTEMS:
         return None  # POI decks use _get_poi_classification instead
 
     module_path = _CLASSIFICATION_REGISTRY.get(key)
@@ -599,11 +615,43 @@ def _get_classification(region_name: str, system_name: str) -> Classification:
     return mod.CLASSIFICATION
 
 
+def _combined_pois_for_region(region: Region):
+    """Merge peak-soaring POIs and Landewiesen for a region.
+
+    Returns ``(pois, category_style)`` where *pois* is sorted by distance
+    to the region's reference airfield.
+    """
+    from classifications.peak_soaring_pois import (
+        pois_for_region as _ps_pois,
+        CATEGORY_STYLE as _ps_style,
+        _haversine_km, _SORT_ORIGIN,
+    )
+    from classifications.landewiesen import (
+        landewiesen_for_region as _lw_pois,
+        CATEGORY_STYLE as _lw_style,
+    )
+
+    combined = _ps_pois(region)
+    try:
+        combined = combined + _lw_pois(region)
+    except FileNotFoundError:
+        pass  # Landewiesen ZIP not available
+
+    # Re-sort combined list by distance to reference airfield
+    origin = _SORT_ORIGIN.get(region.name, (47.820, 11.480))
+    combined.sort(key=lambda p: _haversine_km(
+        origin[0], origin[1], p.lat, p.lon))
+
+    style = {**_ps_style, **_lw_style}
+    return combined, style
+
+
 def _get_poi_classification(region_name: str, system_name: str) -> POIClassification:
     """Import and return a POIClassification by region + system name.
 
-    POIs are filtered by the region's bounding box, so shared POIs
-    in the Ost-/Westalpen overlap zone appear in both decks.
+    For ``system_name="pois"`` the classification merges peak-soaring
+    POIs with Landewiesen/airstrip waypoints.  For ``"landewiesen"``
+    only the outlanding catalogue is returned (with CUPX photos).
     """
     if system_name not in _POI_SYSTEMS:
         raise ValueError(f"Not a POI system: {system_name!r}")
@@ -616,9 +664,8 @@ def _get_poi_classification(region_name: str, system_name: str) -> POIClassifica
         filtered = landewiesen_for_region(region)
         cls_name = "landewiesen"
         cls_title = "Aussenlandewiesen"
-    else:
-        from classifications.pois import pois_for_region, CATEGORY_STYLE  # type: ignore[no-redef]
-        filtered = pois_for_region(region)
+    else:  # "pois" — combined peak-soaring + landewiesen
+        filtered, CATEGORY_STYLE = _combined_pois_for_region(region)
         cls_name = "pois"
         cls_title = "Peak Soaring POIs"
 
@@ -721,8 +768,7 @@ def get_sub_region_poi_deck(
 
     sub_region = _make_sub_region_region(parent_region, sub)
 
-    from classifications.pois import pois_for_region, CATEGORY_STYLE
-    filtered = pois_for_region(sub_region)
+    filtered, CATEGORY_STYLE = _combined_pois_for_region(sub_region)
 
     # Exclude POIs too close to the bbox edges (Anki button clearance)
     m = SUB_REGION_EDGE_MARGIN_FRAC

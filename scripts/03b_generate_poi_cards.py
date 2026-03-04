@@ -128,11 +128,46 @@ def _render_poi_marker(ax, poi: POI, style: dict, zorder: int = 10,
 
     If *valley_polygon* is given (and the POI is a valley), the polygon
     is drawn as a filled area instead of a point marker.
+    Airstrips with a heading get a circle + rotated line marker.
     """
     if valley_polygon is not None and poi.category == "valley":
         _render_valley_area(ax, valley_polygon, style["color"],
                             alpha=0.35 * alpha, zorder=zorder)
         return
+
+    # Airstrip with heading: circle + rotated line indicating runway direction
+    if poi.category == "airstrip" and getattr(poi, 'heading', None) is not None:
+        from matplotlib.markers import MarkerStyle
+        from matplotlib.transforms import Affine2D
+        # Base circle
+        ax.plot(
+            poi.lon, poi.lat,
+            marker="o",
+            color=style["color"],
+            markersize=style["size"] * size_scale,
+            markeredgecolor="white",
+            markeredgewidth=0.3 * size_scale,
+            transform=ccrs.PlateCarree(),
+            zorder=zorder,
+            alpha=alpha,
+        )
+        # Heading line: "|" marker rotated to runway direction
+        # heading 0° = North; rotate_deg expects CCW, so negate.
+        t = Affine2D().rotate_deg(-poi.heading)
+        heading_marker = MarkerStyle("|", transform=t)
+        ax.plot(
+            poi.lon, poi.lat,
+            marker=heading_marker,
+            color=style["color"],
+            markersize=style["size"] * size_scale * 1.8,
+            markeredgecolor=style["color"],
+            markeredgewidth=0.8 * size_scale,
+            transform=ccrs.PlateCarree(),
+            zorder=zorder + 1,
+            alpha=alpha,
+        )
+        return
+
     ax.plot(
         poi.lon, poi.lat,
         marker=style["marker"],
@@ -293,14 +328,23 @@ def render_poi_question(ax, poi: POI, d: POIDeck, fontsize: float = 11):
     )
 
 
+# Preferred ordering of categories in the map legend.
+_CATEGORY_LEGEND_ORDER = [
+    "peak", "pass", "town", "valley", "lake",
+    "landefeld_a", "landefeld_b", "airstrip",
+]
+
+
 def render_legend(ax, d: POIDeck):
     """Render a small legend showing category symbols."""
     handles = []
-    for cat in ["peak", "pass", "town", "valley", "lake"]:
-        style = d.category_style.get(cat, {})
+    for cat in _CATEGORY_LEGEND_ORDER:
+        style = d.category_style.get(cat)
         if not style:
             continue
         count = len(d.pois_by_category(cat))
+        if count == 0:
+            continue
         handles.append(plt.Line2D(
             [0], [0],
             marker=style["marker"],

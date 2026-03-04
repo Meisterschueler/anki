@@ -18,13 +18,15 @@ class Gebirgsgruppe:
 
 @dataclass
 class POI:
-    """One point-of-interest entry (peak, pass, valley, town, lake)."""
+    """One point-of-interest entry (peak, pass, valley, town, lake, airstrip…)."""
     poi_id: str             # Unique ID, e.g. "peak_01", "pass_03"
     name: str               # Display name, e.g. "Zugspitze"
-    category: str           # "peak", "pass", "valley", "town", "lake"
+    category: str           # "peak", "pass", "valley", "town", "lake",
+                            #  "landefeld_a", "landefeld_b", "airstrip"
     lat: float              # WGS84 latitude
     lon: float              # WGS84 longitude
     elevation: Optional[int] = None   # Metres (peaks, passes)
     subtitle: Optional[str] = None    # e.g. "Mittagsspitze" for Hirschberg
+    heading: Optional[int] = None     # Runway heading in degrees (0-360, airstrips)
     tags: List[str] = field(default_factory=list)  # Anki tags for filtering
     pics: List[str] = field(default_factory=list)  # Embedded image filenames

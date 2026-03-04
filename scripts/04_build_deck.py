@@ -779,10 +779,12 @@ def _build_poi_notes(
         if extra_tags:
             tags.extend(extra_tags)
 
-        # CUPX pics (Landewiesen only — empty for other POI decks)
+        # CUPX pics — only shown in the dedicated Landewiesen deck,
+        # not in the combined POI deck (which shares the same template).
         osm_pic_html = ""
         field_pic_html = ""
-        if hasattr(poi, 'pics') and poi.pics:
+        if (d.poi_classification.name == "landewiesen"
+                and hasattr(poi, 'pics') and poi.pics):
             from classifications.landewiesen import pic_path
             for pic_name in poi.pics:
                 pp = pic_path(pic_name)
