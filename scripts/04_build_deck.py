@@ -138,7 +138,7 @@ _APKG_CSS = _BASE_CSS + """\
 }
 """
 
-# Compact JS for the compass onclick handler (shared across group + POI).
+# Compact JS for the compass onclick handler (shared across group cards only).
 # Toggles between 0° (north-up) and 180° (south-up).
 # Basemap is stored north-up; basemap-rot has azimuth 135° (also north-up).
 # CSS rotate(180deg) is applied to active basemap + all overlays.
@@ -152,6 +152,24 @@ _COMPASS_ONCLICK = (
     "var ang=r?'':'rotate(180deg)';"
     "if(br)br.style.transform=r?'':'rotate(180deg)';"
     "c.querySelectorAll('img.overlay,img.allpois,img.partition,img.context')"
+    ".forEach(function(i){i.style.transform=ang;});"
+    "this.style.transform=ang;"
+    "sessionStorage.setItem('ps_rot',r?'0':'1');"
+)
+
+# Compass onclick for POI cards — same basemap↔basemap-rot swap as group cards.
+# basemap-rot uses a different hillshade azimuth so lighting always appears
+# to come from the same direction regardless of map orientation.
+_COMPASS_ONCLICK_POI = (
+    "var c=this.parentNode;"
+    "var bm=c.querySelector('img.basemap');"
+    "var br=c.querySelector('img.basemap-rot');"
+    "var r=bm&&bm.style.display==='none';"
+    "if(bm)bm.style.display=r?'':'none';"
+    "if(br)br.style.display=r?'none':'block';"
+    "var ang=r?'':'rotate(180deg)';"
+    "if(br)br.style.transform=r?'':'rotate(180deg)';"
+    "c.querySelectorAll('img.overlay,img.allpois,img.context')"
     ".forEach(function(i){i.style.transform=ang;});"
     "this.style.transform=ang;"
     "sessionStorage.setItem('ps_rot',r?'0':'1');"
@@ -588,7 +606,7 @@ _POI_TMPL_IDENTIFY_FRONT = (
     '{{#Thumbnail}}{{Thumbnail}}{{/Thumbnail}}\n'
     '<button class="hint-btn" onclick="var i=this.parentNode.querySelector(\'img.allpois\');var v=i.style.display!==\'block\';i.style.display=v?\'block\':\'none\';this.textContent=v?\'\\u2716 POIs\':\'\\u25a6 POIs\';sessionStorage.setItem(\'ps_pois\',v?\'1\':\'0\');">&#9638; POIs</button>\n'
     '<button class="hint-btn" style="left:80px;" onclick="var i=this.parentNode.querySelector(\'img.context\');var v=i.style.display!==\'block\';i.style.display=v?\'block\':\'none\';this.textContent=v?\'\\u2716 Kontext\':\'\\u25a6 Kontext\';sessionStorage.setItem(\'ps_ctx\',v?\'1\':\'0\');">&#9638; Kontext</button>\n'
-    '<div class="compass-btn" onclick="' + _COMPASS_ONCLICK + '">' + _NORDPFEIL_SVG + '</div>\n'
+    '<div class="compass-btn" onclick="' + _COMPASS_ONCLICK_POI + '">' + _NORDPFEIL_SVG + '</div>\n'
     '</div>\n'
     '<script>' + _SESSION_RESTORE_POI + '</script>\n'
 )
@@ -603,12 +621,13 @@ _POI_TMPL_IDENTIFY_BACK = (
     '{{Basemap}}\n'
     '{{BasemapRot}}\n'
     '{{AllPois}}\n'
+    '{{Highlight}}\n'
     '{{BackOverlay}}\n'
     '{{Context}}\n'
     '{{#Thumbnail}}{{Thumbnail}}{{/Thumbnail}}\n'
     '<button class="hint-btn" onclick="var i=this.parentNode.querySelector(\'img.allpois\');var v=i.style.display!==\'block\';i.style.display=v?\'block\':\'none\';this.textContent=v?\'\\u2716 POIs\':\'\\u25a6 POIs\';sessionStorage.setItem(\'ps_pois\',v?\'1\':\'0\');">&#9638; POIs</button>\n'
     '<button class="hint-btn" style="left:80px;" onclick="var i=this.parentNode.querySelector(\'img.context\');var v=i.style.display!==\'block\';i.style.display=v?\'block\':\'none\';this.textContent=v?\'\\u2716 Kontext\':\'\\u25a6 Kontext\';sessionStorage.setItem(\'ps_ctx\',v?\'1\':\'0\');">&#9638; Kontext</button>\n'
-    '<div class="compass-btn" onclick="' + _COMPASS_ONCLICK + '">' + _NORDPFEIL_SVG + '</div>\n'
+    '<div class="compass-btn" onclick="' + _COMPASS_ONCLICK_POI + '">' + _NORDPFEIL_SVG + '</div>\n'
     '</div>\n'
     '{{#OsmPic}}\n'
     '<div class="cupx-pics">\n'
@@ -637,6 +656,7 @@ def _poi_model(model_id: int, model_name: str) -> genanki.Model:
         OsmPic     (CUPX satellite image, Landewiesen only)
         FieldPic   (CUPX field photo, Landewiesen only — may be empty)
     """
+    _MODEL_VER = 8
     return genanki.Model(
         model_id,
         model_name,
@@ -721,6 +741,86 @@ def _collect_shared_layers(d: POIDeck, media_files: list) -> dict:
     return result
 
 
+def _poi_overlay_html(images_dir, webp_file: str, css_class: str = "overlay") -> str:
+    """Build an <img> tag for a POI overlay.
+
+    If a JSON sidecar exists next to the WebP (written by _save_sprite_overlay
+    or _save_highlight_position_json), injects position/size inline-style so
+    the sprite is correctly placed over the full-map basemap.  When the JSON
+    contains a ``sprite_file`` key the shared category highlight image is used
+    as src instead of the (non-existent) per-POI WebP.
+
+    Falls back to a plain width:100% overlay tag when the sidecar is absent.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    json_path = _Path(images_dir) / (_Path(webp_file).stem + ".json")
+    if json_path.exists():
+        meta = _json.loads(json_path.read_text())
+        lp = meta["left_pct"]
+        tp = meta["top_pct"]
+        wp = meta["width_pct"]
+        hp = meta["height_pct"]
+        # transform-origin: the rotation pivot must align with the map centre
+        # (50 %, 50 % of the .card-map container).  Express that point as a
+        # fraction of the sprite's own dimensions.
+        ox = (50.0 - lp) / wp * 100.0
+        oy = (50.0 - tp) / hp * 100.0
+        style = (
+            f"left:{lp:.4f}%;top:{tp:.4f}%;"
+            f"width:{wp:.4f}%;height:{hp:.4f}%;"
+            f"transform-origin:{ox:.4f}% {oy:.4f}%;"
+        )
+        # Use shared category sprite if specified, else the per-POI WebP
+        src = meta.get("sprite_file", _Path(webp_file).name)
+        return f'<img class="{css_class}" style="{style}" src="{src}">'
+    return f'<img class="{css_class}" src="{webp_file}">'
+
+
+def _poi_badge_in_ring_html(images_dir, highlight_webp_file: str,
+                            badge_file: str) -> str:
+    """Position the category badge sprite centred inside the POI highlight ring.
+
+    Reads the highlight JSON sidecar to get the ring bounding box, then places
+    the badge image centred there at ~70 % of the ring's dimensions.  Sets the
+    same transform-origin as the ring so compass rotation keeps everything
+    aligned with the map centre.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    json_path = _Path(images_dir) / (_Path(highlight_webp_file).stem + ".json")
+    if not json_path.exists():
+        return f'<img class="overlay" src="{badge_file}">'
+
+    meta = _json.loads(json_path.read_text())
+    lp = meta["left_pct"]
+    tp = meta["top_pct"]
+    wp = meta["width_pct"]
+    hp = meta["height_pct"]
+
+    # Centre of the ring (as % of full canvas)
+    cx = lp + wp / 2
+    cy = tp + hp / 2
+
+    # Badge size: ~70 % of ring bounding box, centred on ring
+    bw = wp * 0.70
+    bh = hp * 0.70
+    bl = cx - bw / 2
+    bt = cy - bh / 2
+
+    # transform-origin aligned with the map centre (50 %, 50 % of .card-map)
+    ox = (50.0 - bl) / bw * 100.0
+    oy = (50.0 - bt) / bh * 100.0
+    style = (
+        f"left:{bl:.4f}%;top:{bt:.4f}%;"
+        f"width:{bw:.4f}%;height:{bh:.4f}%;"
+        f"transform-origin:{ox:.4f}% {oy:.4f}%;"
+    )
+    return f'<img class="overlay" style="{style}" src="{badge_file}">'
+
+
 def _build_poi_notes(
     d: POIDeck,
     model: genanki.Model,
@@ -754,26 +854,38 @@ def _build_poi_notes(
 
     notes = []
     skipped = 0
+    _badge_media_set: set = set()     # deduplicate badge media per call
+    _hl_sprite_media_set: set = set() # deduplicate highlight sprite media per call
 
     for poi in pois:
         highlight_file = d.filename_poi_highlight(poi.poi_id, ".webp")
-        back_file = d.filename_poi_back(poi.poi_id, ".webp")
         highlight_path = d.output_images_dir / highlight_file
-        back_path = d.output_images_dir / back_file
+        highlight_json  = highlight_path.with_suffix(".json")
 
-        if not highlight_path.exists() or not back_path.exists():
+        if not highlight_json.exists():
             skipped += 1
-            missing = []
-            if not highlight_path.exists():
-                missing.append("highlight")
-            if not back_path.exists():
-                missing.append("back")
-            print(f"[APKG-POI] WARN: Missing {', '.join(missing)} "
+            print(f"[APKG-POI] WARN: Missing highlight JSON "
                   f"for {poi.poi_id} ({poi.name})")
             continue
 
-        media_files.append(str(highlight_path))
-        media_files.append(str(back_path))
+        # Add shared category highlight sprite to media (one per category)
+        hl_sprite_file = d.filename_category_highlight(poi.category, ".webp")
+        hl_sprite_path = d.output_images_dir / hl_sprite_file
+        if str(hl_sprite_path) not in _hl_sprite_media_set:
+            if hl_sprite_path.exists():
+                media_files.append(str(hl_sprite_path))
+            _hl_sprite_media_set.add(str(hl_sprite_path))
+
+        # Category badge — centred inside the highlight ring on the back face
+        badge_file = d.filename_category_badge(poi.category, ".webp")
+        badge_path = d.output_images_dir / badge_file
+        if badge_path.exists() and str(badge_path) not in _badge_media_set:
+            media_files.append(str(badge_path))
+            _badge_media_set.add(str(badge_path))
+        back_overlay_html = (
+            _poi_badge_in_ring_html(d.output_images_dir, highlight_file, badge_file)
+            if badge_path.exists() else ""
+        )
 
         tags = [poi.category]
         if extra_tags:
@@ -805,8 +917,8 @@ def _build_poi_notes(
                 layers["basemap_html"],
                 layers["basemap_rot_html"],
                 layers["all_pois_html"],
-                f'<img class="overlay" src="{highlight_file}">',
-                f'<img class="overlay" src="{back_file}">',
+                _poi_overlay_html(d.output_images_dir, highlight_file),
+                back_overlay_html,
                 layers["context_html"],
                 f'<img class="thumbnail" src="{thumbnail_file}">' if thumbnail_file else "",
                 osm_pic_html,
@@ -839,7 +951,7 @@ def generate_apkg_poi(d: POIDeck) -> None:
     deck_title = f"{region_label} {system_label} (Beta {today})"
 
     base = f"peak_soaring_{d.name}"
-    _MODEL_VER = 6
+    _MODEL_VER = 8
     model_id = int(hashlib.sha256(f"{base}_poi_model_v{_MODEL_VER}".encode()).hexdigest()[:8], 16)
     deck_id = int(hashlib.sha256(f"{base}_poi_deck".encode()).hexdigest()[:8], 16)
 
@@ -897,7 +1009,7 @@ def generate_apkg_poi_multi(d: POIDeck, region_name: str) -> None:
     # Bump _MODEL_VER when fields or templates change to force Anki
     # to create a fresh note-type on re-import (otherwise the old
     # model is kept and new fields like Thumbnail are invisible).
-    _MODEL_VER = 6
+    _MODEL_VER = 8
     model_id = int(hashlib.sha256(
         f"{base}_multi_model_v{_MODEL_VER}".encode()
     ).hexdigest()[:8], 16)

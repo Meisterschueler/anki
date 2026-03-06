@@ -31,6 +31,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import matplotlib.path as mpath
 import cartopy.crs as ccrs
 import numpy as np
 
@@ -60,7 +61,97 @@ render_cities = _bm.render_cities
 _cards = import_module("03_generate_cards")
 save_figure = _cards.save_figure
 generate_context = _cards.generate_context
-_generate_basemap = _cards._generate_basemap
+
+
+def _generate_basemap(d, force: bool = False) -> None:
+    """Generate basemap + rotated basemap for POI decks.
+
+    basemap_rot uses a different hillshade azimuth so that the terrain
+    lighting always appears consistent regardless of map orientation.
+    """
+    basemap_path = d.output_images_dir / d.filename_basemap()
+    generate_raster_basemap(d, basemap_path, force=force)
+    basemap_rot_path = d.output_images_dir / d.filename_basemap_rot()
+    generate_raster_basemap_rot(d, basemap_rot_path, force=force)
+
+
+# ─── Custom path markers ──────────────────────────────────────────────────────
+
+def _bracket_outward(arm_h=0.40, arm_w=0.20, gap=0.10, lw=0.09):
+    """'][ ' shape: two outward-facing brackets (Pass symbol)."""
+    def _rect(x0, y0, w, h):
+        return ([(x0, y0), (x0+w, y0), (x0+w, y0+h), (x0, y0+h), (x0, y0)],
+                [mpath.Path.MOVETO, mpath.Path.LINETO, mpath.Path.LINETO,
+                 mpath.Path.LINETO, mpath.Path.CLOSEPOLY])
+    all_v, all_c = [], []
+    for sign in (+1, -1):
+        x = sign * gap
+        v, c = _rect(x - lw/2, -arm_h, lw, arm_h * 2)
+        all_v += v; all_c += c
+        arm_x0 = x if sign > 0 else x - arm_w
+        for ay in (arm_h - lw, -arm_h):
+            v, c = _rect(arm_x0, ay, arm_w, lw)
+            all_v += v; all_c += c
+    return mpath.Path(all_v, all_c)
+
+
+def _v_notch_circle(v_half_angle_deg=25, tip_y=-0.15):
+    """Filled circle with V-notch cutout at top (Tal/Valley symbol)."""
+    theta_left  = np.radians(90 + v_half_angle_deg)
+    theta_right = np.radians(90 - v_half_angle_deg)
+    n_arc = 80
+    arc_angles = np.linspace(theta_right, theta_left - 2 * np.pi, n_arc)
+    arc_x = np.cos(arc_angles)
+    arc_y = np.sin(arc_angles)
+    verts = (list(zip(arc_x, arc_y))
+             + [(0.0, tip_y), (arc_x[0], arc_y[0])])
+    codes = ([mpath.Path.MOVETO]
+             + [mpath.Path.LINETO] * (n_arc - 1)
+             + [mpath.Path.LINETO, mpath.Path.CLOSEPOLY])
+    return mpath.Path(verts, codes)
+
+
+def _lake_two_waves(n=60, x_extent=0.80, periods=2.5, amp=0.18, dy=0.22):
+    """Two parallel sine waves inside a unit circle (See/Lake symbol, Variant B).
+
+    Returns an open-polyline Path (no fill) to be rendered as edge strokes.
+    Boundary MOVETO points at ±1.0 anchor the bounding box to match the
+    'o' circle marker so both markers stay the same visual size.
+    """
+    t = np.linspace(-x_extent, x_extent, n)
+    wave1_y =  dy + np.sin(t / x_extent * periods * np.pi) * amp
+    wave2_y = -dy + np.sin(t / x_extent * periods * np.pi) * amp
+    # Invisible boundary points force bounding-box to [-1,1]×[-1,1]
+    bounds = [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)]
+    verts = (bounds
+             + list(zip(t, wave1_y))
+             + list(zip(t, wave2_y)))
+    codes = ([mpath.Path.MOVETO] * 4
+             + [mpath.Path.MOVETO] + [mpath.Path.LINETO] * (n - 1)
+             + [mpath.Path.MOVETO] + [mpath.Path.LINETO] * (n - 1))
+    return mpath.Path(verts, codes)
+
+
+def _airstrip_bar(r=1.0, extend_frac=0.25, bar_w=0.09):
+    """Thin vertical rectangle representing a runway bar (Flugplatz symbol).
+
+    Extends *extend_frac* × r beyond the circle edge on each side, so total
+    half-length = r * (1 + extend_frac).  Rendered as pass 1; a white circle
+    with black edge is drawn on top as pass 2.
+    """
+    y_ext = r * (1 + extend_frac)
+    xl, xr = -bar_w / 2, bar_w / 2
+    verts = [(xl, -y_ext), (xr, -y_ext), (xr, y_ext), (xl, y_ext), (xl, -y_ext)]
+    codes = [mpath.Path.MOVETO, mpath.Path.LINETO, mpath.Path.LINETO,
+             mpath.Path.LINETO, mpath.Path.CLOSEPOLY]
+    return mpath.Path(verts, codes)
+
+
+# Pre-built path markers (module-level, created once)
+_PASS_PATH     = _bracket_outward(arm_h=0.40, arm_w=0.20, gap=0.10, lw=0.09)
+_VALLEY_PATH   = _v_notch_circle(v_half_angle_deg=25, tip_y=-0.15)
+_LAKE_PATH     = _lake_two_waves()
+_AIRSTRIP_BAR  = _airstrip_bar(r=1.0, extend_frac=0.5, bar_w=0.5)
 
 
 # ─── Valley polygon cache ─────────────────────────────────────────────────────
@@ -135,33 +226,120 @@ def _render_poi_marker(ax, poi: POI, style: dict, zorder: int = 10,
                             alpha=0.35 * alpha, zorder=zorder)
         return
 
-    # Airstrip with heading: circle + rotated line indicating runway direction
-    if poi.category == "airstrip" and getattr(poi, 'heading', None) is not None:
-        from matplotlib.markers import MarkerStyle
-        from matplotlib.transforms import Affine2D
-        # Base circle
+    # Letter-badge: white circle with thin black border + bold category letter
+    letter = style.get("letter")
+    if letter:
+        sz = style["size"] * size_scale
         ax.plot(
             poi.lon, poi.lat,
             marker="o",
-            color=style["color"],
-            markersize=style["size"] * size_scale,
-            markeredgecolor="white",
-            markeredgewidth=0.3 * size_scale,
+            color="white",
+            markeredgecolor="black",
+            markeredgewidth=0.5 * size_scale,
+            markersize=sz,
             transform=ccrs.PlateCarree(),
             zorder=zorder,
             alpha=alpha,
         )
-        # Heading line: "|" marker rotated to runway direction
-        # heading 0° = North; rotate_deg expects CCW, so negate.
-        t = Affine2D().rotate_deg(-poi.heading)
-        heading_marker = MarkerStyle("|", transform=t)
+        ax.text(
+            poi.lon, poi.lat,
+            letter,
+            color=style["color"],
+            fontsize=sz * 0.52,
+            fontweight="bold",
+            fontstyle="normal",
+            ha="center", va="center_baseline",
+            transform=ccrs.PlateCarree(),
+            zorder=zorder + 1,
+            alpha=alpha,
+        )
+        return
+
+    # Pass: outward-bracket '][ ' path marker
+    if poi.category == "pass":
         ax.plot(
             poi.lon, poi.lat,
-            marker=heading_marker,
+            marker=_PASS_PATH,
             color=style["color"],
-            markersize=style["size"] * size_scale * 1.8,
+            markersize=style["size"] * size_scale,
+            markeredgewidth=0,
+            transform=ccrs.PlateCarree(),
+            zorder=zorder,
+            alpha=alpha,
+        )
+        return
+
+    # Valley (no polygon): V-notch circle path marker
+    if poi.category == "valley":
+        ax.plot(
+            poi.lon, poi.lat,
+            marker=_VALLEY_PATH,
+            color=style["color"],
+            markersize=style["size"] * size_scale,
+            markeredgewidth=0,
+            transform=ccrs.PlateCarree(),
+            zorder=zorder,
+            alpha=alpha,
+        )
+        return
+
+    # Lake: white circle with black edge + two parallel blue waves (Variant B)
+    if poi.category == "lake":
+        sz = style["size"] * size_scale
+        # Pass 1 – white circle with black edge (same as cat A/B base)
+        ax.plot(
+            poi.lon, poi.lat,
+            marker="o",
+            color="white",
+            markersize=sz,
+            markeredgecolor="black",
+            markeredgewidth=0.5 * size_scale,
+            transform=ccrs.PlateCarree(),
+            zorder=zorder,
+            alpha=alpha,
+        )
+        # Pass 2 – two blue wave lines (open path, no fill)
+        ax.plot(
+            poi.lon, poi.lat,
+            marker=_LAKE_PATH,
+            color="none",
+            markersize=sz,
             markeredgecolor=style["color"],
-            markeredgewidth=0.8 * size_scale,
+            markeredgewidth=0.7 * size_scale,
+            transform=ccrs.PlateCarree(),
+            zorder=zorder + 1,
+            alpha=alpha,
+        )
+        return
+
+    # Airstrip: black runway bar (rotated to heading) + white circle with black edge on top
+    if poi.category == "airstrip":
+        from matplotlib.markers import MarkerStyle
+        from matplotlib.transforms import Affine2D
+        heading = getattr(poi, 'heading', None) or 0
+        # heading 0° = North → bar is vertical; rotate_deg is CCW so negate
+        t = Affine2D().rotate_deg(-heading)
+        bar_marker = MarkerStyle(_AIRSTRIP_BAR, transform=t)
+        sz = style["size"] * size_scale
+        # Pass 1 – black runway bar (markersize 1.5× so bar protrudes r/2 beyond circle)
+        ax.plot(
+            poi.lon, poi.lat,
+            marker=bar_marker,
+            color="black",
+            markersize=sz * 1.5,
+            markeredgewidth=0,
+            transform=ccrs.PlateCarree(),
+            zorder=zorder,
+            alpha=alpha,
+        )
+        # Pass 2 – white circle with black edge (sz matches cat A/B circle size)
+        ax.plot(
+            poi.lon, poi.lat,
+            marker="o",
+            color="white",
+            markeredgecolor="black",
+            markeredgewidth=0.5 * size_scale,
+            markersize=sz,
             transform=ccrs.PlateCarree(),
             zorder=zorder + 1,
             alpha=alpha,
@@ -300,6 +478,8 @@ def render_poi_question(ax, poi: POI, d: POIDeck, fontsize: float = 11):
     if poi.subtitle:
         name_line += f" ({poi.subtitle})"
     info_parts = [cat_label]
+    if poi.elevation:
+        info_parts.append(f"{poi.elevation} m")
     info_line = " · ".join(info_parts)
 
     # Render as title box at top
@@ -345,15 +525,27 @@ def render_legend(ax, d: POIDeck):
         count = len(d.pois_by_category(cat))
         if count == 0:
             continue
-        handles.append(plt.Line2D(
-            [0], [0],
-            marker=style["marker"],
-            color="w",
-            markerfacecolor=style["color"],
-            markeredgecolor="white",
-            markersize=style["size"],
-            label=f"{style.get('label', cat)} ({count})",
-        ))
+        if style.get("letter"):
+            handles.append(plt.Line2D(
+                [0], [0],
+                marker="o",
+                color="w",
+                markerfacecolor="white",
+                markeredgecolor="black",
+                markeredgewidth=0.5,
+                markersize=style["size"],
+                label=f"{style['letter']}  {style.get('label', cat)} ({count})",
+            ))
+        else:
+            handles.append(plt.Line2D(
+                [0], [0],
+                marker=style["marker"],
+                color="w",
+                markerfacecolor=style["color"],
+                markeredgecolor="white",
+                markersize=style["size"],
+                label=f"{style.get('label', cat)} ({count})",
+            ))
     if handles:
         ax.legend(
             handles=handles,
@@ -388,15 +580,268 @@ def generate_all_pois_overlay(d: POIDeck, output_path, pois=None) -> None:
     plt.close(fig)
 
 
+# ─── Fast PIL-based overlay helpers ─────────────────────────────────────────
+#
+# Bypasses matplotlib figure rendering for highlight/back overlays.
+# Each overlay is just a red ellipse + optionally a small marker sprite on a
+# transparent RGBA canvas.  Saving the canvas as lossless WebP is still the
+# primary cost (~0.25 s) but the matplotlib savefig step (~0.40 s) is avoided.
+#
+# Speedup: ~3× vs the matplotlib-per-POI approach.
+
+def _poi_geo_to_px(d: POIDeck, lon: float, lat: float):
+    """Convert geographic coordinates to pixel position for the deck's canvas."""
+    import math
+    w, h = _compute_pixel_dims(d)
+    x = (lon - d.bbox_west)  / (d.bbox_east  - d.bbox_west)  * w
+    y = (d.bbox_north - lat) / (d.bbox_north - d.bbox_south) * h
+    return x, y, w, h
+
+
+def _highlight_ellipse_params(d: POIDeck, poi: POI):
+    """Return (cx, cy, rx, ry, lw_px, canvas_w, canvas_h) for the red circle.
+
+    rx and ry are derived so that the ellipse appears as a circle when the
+    basemap is displayed at its natural (cos-corrected) aspect ratio.
+
+    The basemap width covers lon_span degrees at w pixels, so:
+        rx = radius_deg * w / (lon_span * cos(lat))
+    The basemap height covers lat_span degrees at h pixels, so:
+        ry = radius_deg * h / lat_span
+    These are equal at mid_lat (where w/h = lon_span*cos(mid_lat)/lat_span),
+    giving a visual circle for POIs near the map centre.
+    """
+    import math
+    cx, cy, w, h = _poi_geo_to_px(d, poi.lon, poi.lat)
+    lon_span   = d.bbox_east  - d.bbox_west
+    lat_span   = d.bbox_north - d.bbox_south
+    radius_deg = _HIGHLIGHT_RADIUS_FRAC * lat_span
+    ry = radius_deg / lat_span * h
+    rx = radius_deg * w / (lon_span * math.cos(math.radians(poi.lat)))
+    lw = max(2, int(ry * 0.09))
+    return cx, cy, rx, ry, lw, w, h
+
+
+# Cache of pre-rendered marker sprites: category_key → PIL RGBA Image
+_MARKER_SPRITE_CACHE: dict = {}
+
+def _get_marker_sprite(d: POIDeck, category: str) -> "PIL.Image.Image | None":
+    """Return a small RGBA PIL sprite of the POI marker for *category*.
+
+    Rendered once per (deck-title, category) pair and cached in memory.
+    """
+    import io as _io
+    from PIL import Image as _PIL
+
+    key = (id(d.category_style), category)
+    if key in _MARKER_SPRITE_CACHE:
+        return _MARKER_SPRITE_CACHE[key]
+
+    style = d.category_style.get(category)
+    if not style:
+        _MARKER_SPRITE_CACHE[key] = None
+        return None
+
+    # Sprite size: markersize in pt × (DPI/72) pixels, plus 20% padding
+    import deck as _D
+    sz_pt = style.get("size", 10)
+    sz_px = int(sz_pt * (_D.FIGURE_DPI / 72) * 1.4)
+    sz_px = max(sz_px, 10)
+
+    # Build a tiny figure with a single marker centred on (0.5, 0.5)
+    fig_s, ax_s = plt.subplots(figsize=(sz_px / _D.FIGURE_DPI,
+                                        sz_px / _D.FIGURE_DPI),
+                                dpi=_D.FIGURE_DPI)
+    ax_s.set_xlim(0, 1); ax_s.set_ylim(0, 1)
+    ax_s.set_aspect("equal"); ax_s.axis("off")
+    ax_s.set_facecolor("none"); fig_s.patch.set_alpha(0.0)
+
+    # Create a dummy POI at (0.5, 0.5) in data coords
+    from types import SimpleNamespace
+    fake_poi = SimpleNamespace(lon=0.5, lat=0.5, heading=None,
+                               category=category, subtitle=None)
+
+    # Render using plain ax.plot (not _render_poi_marker which uses PlateCarree)
+    letter = style.get("letter")
+    if letter:
+        ax_s.plot(0.5, 0.5, marker="o", color="white",
+                  markeredgecolor="black", markeredgewidth=0.5,
+                  markersize=sz_pt * 0.9, linewidth=0)
+        ax_s.text(0.5, 0.5, letter, color=style["color"],
+                  fontsize=sz_pt * 0.9 * 0.52, fontweight="bold",
+                  ha="center", va="center_baseline")
+    elif category == "pass":
+        ax_s.plot(0.5, 0.5, marker=_PASS_PATH, color=style["color"],
+                  markersize=sz_pt * 0.9, markeredgewidth=0, linewidth=0)
+    elif category == "valley":
+        ax_s.plot(0.5, 0.5, marker=_VALLEY_PATH, color=style["color"],
+                  markersize=sz_pt * 0.9, markeredgewidth=0, linewidth=0)
+    elif category == "lake":
+        # Pass 1 – white circle with black edge
+        ax_s.plot(0.5, 0.5, marker="o", color="white",
+                  markeredgecolor="black", markeredgewidth=0.5,
+                  markersize=sz_pt * 0.9, linewidth=0)
+        # Pass 2 – two blue wave lines (open path, no fill)
+        ax_s.plot(0.5, 0.5, marker=_LAKE_PATH, color="none",
+                  markeredgecolor=style["color"], markeredgewidth=0.7,
+                  markersize=sz_pt * 0.9, linewidth=0)
+    elif category == "airstrip":
+        # Pass 1 – black runway bar (1.5× markersize so bar protrudes r/2 beyond circle)
+        ax_s.plot(0.5, 0.5, marker=_AIRSTRIP_BAR, color="black",
+                  markersize=sz_pt * 0.9 * 1.5, markeredgewidth=0, linewidth=0)
+        # Pass 2 – white circle with black edge (sz matches cat A/B)
+        ax_s.plot(0.5, 0.5, marker="o", color="white",
+                  markeredgecolor="black", markeredgewidth=0.5,
+                  markersize=sz_pt * 0.9, linewidth=0)
+    else:
+        ax_s.plot(0.5, 0.5, marker=style.get("marker", "o"),
+                  color=style["color"],
+                  markersize=sz_pt * 0.9,
+                  markeredgecolor="white", markeredgewidth=0.3,
+                  linewidth=0)
+
+    buf = _io.BytesIO()
+    fig_s.savefig(buf, format="png", dpi=_D.FIGURE_DPI,
+                  pad_inches=0, transparent=True)
+    plt.close(fig_s)
+    buf.seek(0)
+    sprite = _PIL.open(buf).copy()
+    _MARKER_SPRITE_CACHE[key] = sprite
+    return sprite
+
+
+def _save_pil_overlay(img, output_path) -> None:
+    """Save PIL RGBA image as lossless WebP."""
+    from pathlib import Path as _Path
+    out = _Path(output_path).with_suffix(".webp")
+    img.save(str(out), "WEBP", lossless=True)
+
+
+def _draw_highlight_on_image(img, d: POIDeck, poi: POI) -> None:
+    """Draw red highlight ellipse directly onto a PIL RGBA image."""
+    from PIL import ImageDraw as _Draw
+    cx, cy, rx, ry, lw, _w, _h = _highlight_ellipse_params(d, poi)
+    draw = _Draw.Draw(img)
+    draw.ellipse([cx - rx, cy - ry, cx + rx, cy + ry],
+                 outline=(204, 0, 0, 255), width=lw)
+
+
+def _make_highlight_image_pil(d: POIDeck, poi: POI):
+    """Create a blank transparent RGBA canvas with the red highlight circle."""
+    from PIL import Image as _PIL
+    _, _, _rx, _ry, _lw, w, h = _highlight_ellipse_params(d, poi)
+    img = _PIL.new("RGBA", (w, h), (0, 0, 0, 0))
+    _draw_highlight_on_image(img, d, poi)
+    return img
+
+
+def _make_highlight_sprite(d: POIDeck, poi: POI, with_symbol: bool = False):
+    """Create a small RGBA sprite containing only the highlight ellipse area.
+
+    Much faster to save than a full-canvas image (~17ms vs ~250ms).
+
+    Returns:
+        (sprite_img, left_pct, top_pct, width_pct) where the CSS percentages
+        describe where to position the sprite over the full map canvas.
+    """
+    from PIL import Image as _PIL, ImageDraw as _Draw
+
+    cx, cy, rx, ry, lw, w, h = _highlight_ellipse_params(d, poi)
+
+    # Padding around ellipse (at least lw*2 so the stroke is fully included)
+    pad = max(int(lw * 2), 6)
+
+    # Sprite bounding box in canvas coordinates (clamped to canvas)
+    x0 = max(0, int(cx - rx) - pad)
+    y0 = max(0, int(cy - ry) - pad)
+    x1 = min(w, int(cx + rx) + pad + 1)
+    y1 = min(h, int(cy + ry) + pad + 1)
+    sw = x1 - x0
+    sh = y1 - y0
+
+    # Draw ellipse on sprite canvas (coordinates offset by top-left corner)
+    img = _PIL.new("RGBA", (sw, sh), (0, 0, 0, 0))
+    draw = _Draw.Draw(img)
+    draw.ellipse(
+        [cx - rx - x0, cy - ry - y0, cx + rx - x0, cy + ry - y0],
+        outline=(204, 0, 0, 255), width=lw,
+    )
+
+    # Optionally paste the category marker sprite in the centre
+    if with_symbol:
+        marker = _get_marker_sprite(d, poi.category)
+        if marker is not None:
+            ox = int(cx - marker.width  / 2) - x0
+            oy = int(cy - marker.height / 2) - y0
+            img.paste(marker, (ox, oy), marker)
+
+    # CSS percentage position relative to the full canvas
+    left_pct   = x0 / w * 100
+    top_pct    = y0 / h * 100
+    width_pct  = sw / w * 100
+    height_pct = sh / h * 100
+
+    return img, left_pct, top_pct, width_pct, height_pct
+
+
+def _save_sprite_overlay(img, output_path, left_pct, top_pct, width_pct, height_pct) -> None:
+    """Save sprite as lossless WebP and write a JSON sidecar with CSS position.
+
+    The JSON is read by 04_build_deck.py to generate positioned <img> tags
+    without requiring extra Anki note fields.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    out = _Path(output_path).with_suffix(".webp")
+    img.save(str(out), "WEBP", lossless=True)
+
+    meta = {
+        "left_pct":   round(left_pct,   6),
+        "top_pct":    round(top_pct,    6),
+        "width_pct":  round(width_pct,  6),
+        "height_pct": round(height_pct, 6),
+    }
+    _Path(out).with_suffix(".json").write_text(_json.dumps(meta))
+
+
+def _highlight_sprite_position(d: "POIDeck", poi) -> tuple:
+    """Compute highlight sprite CSS position without rendering any image.
+
+    Returns (left_pct, top_pct, width_pct, height_pct) — the bounding box
+    of the highlight ellipse as percentages of the full canvas.
+    """
+    cx, cy, rx, ry, lw, w, h = _highlight_ellipse_params(d, poi)
+    pad = max(int(lw * 2), 6)
+    x0 = max(0, int(cx - rx) - pad)
+    y0 = max(0, int(cy - ry) - pad)
+    x1 = min(w, int(cx + rx) + pad + 1)
+    y1 = min(h, int(cy + ry) + pad + 1)
+    return x0 / w * 100, y0 / h * 100, (x1 - x0) / w * 100, (y1 - y0) / h * 100
+
+
+def _save_highlight_position_json(json_path, sprite_file: str,
+                                  left_pct, top_pct, width_pct, height_pct) -> None:
+    """Write a JSON sidecar with CSS position + shared sprite filename.
+
+    No WebP image is written — the sprite is shared per-category.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+    meta = {
+        "sprite_file": sprite_file,
+        "left_pct":    round(left_pct,   6),
+        "top_pct":     round(top_pct,    6),
+        "width_pct":   round(width_pct,  6),
+        "height_pct":  round(height_pct, 6),
+    }
+    _Path(json_path).write_text(_json.dumps(meta))
+
+
 # ─── Overlay-only functions (for Anki CSS compositing) ───────────────────────
 
 def generate_poi_highlight_overlay(d: POIDeck, poi: POI, output_path) -> None:
-    """Overlay: red highlight circle on transparent background.
-
-    Used for highlight and back overlays — composited with basemap +
-    context + all_pois in Anki via CSS.  Label is shown in the HTML
-    template, not burned into the image.
-    """
+    """Overlay: red highlight circle on transparent background (standalone)."""
     fig, ax = create_figure(d)
     ax.set_facecolor("none")
     ax.patch.set_alpha(0.0)
@@ -405,21 +850,46 @@ def generate_poi_highlight_overlay(d: POIDeck, poi: POI, output_path) -> None:
     plt.close(fig)
 
 
+def generate_poi_back_overlay(d: POIDeck, poi: POI, output_path) -> None:
+    """Overlay: red highlight circle + POI symbol centred inside it (standalone)."""
+    fig, ax = create_figure(d)
+    ax.set_facecolor("none")
+    ax.patch.set_alpha(0.0)
+    render_poi_highlight(ax, poi, d)
+    style = d.category_style.get(poi.category, {})
+    if style:
+        _render_poi_marker(ax, poi, style, zorder=16, size_scale=1.0)
+    save_figure(fig, output_path, overlay=True)
+    plt.close(fig)
+
+
+def _clear_overlay_axes(ax) -> None:
+    """Remove all drawn artists from a transparent overlay axes.
+
+    Keeps the projection, extent and facecolor intact so the figure can
+    be reused for the next POI without the expensive GeoAxes construction.
+    """
+    for artist_list in (ax.lines, ax.patches, ax.collections, ax.texts, ax.images):
+        for a in list(artist_list):
+            a.remove()
+
+
 # ─── Batch Generation ────────────────────────────────────────────────────────
 
 def generate_all(d: POIDeck, pois=None, force=False):
-    """Generate basemap + partition + per-POI WebP images (overlay mode only).
+    """Generate basemap + per-POI WebP images (overlay mode only).
 
     Generates transparent overlays for Anki CSS compositing:
-      context + all_pois + 2 per POI (highlight + back).
+      context + all_pois + 1 badge per category + 1 highlight per POI.
     """
     if pois is None:
         pois = d.pois
 
     _generate_basemap(d, force=force)
 
-    # context + all_pois + 2 per POI (highlight + back)
-    total = 2 + 2 * len(pois)
+    n_categories = len({poi.category for poi in pois})
+    # context + all_pois + badges + 1 highlight sprite per category + 1 JSON per POI
+    total = 2 + 2 * n_categories + len(pois)
     count = 0
 
     print(f"[POI-CARDS] Generating {total} overlay images for {d.title} …")
@@ -442,29 +912,54 @@ def generate_all(d: POIDeck, pois=None, force=False):
     else:
         print(f"  [{count}/{total}] Skip (exists): {all_pois_path.name}")
 
-    # 3. Per-POI overlays
+    # 3. Category badges (one per type, shared by all POIs of that category)
+    for category in sorted({poi.category for poi in pois}):
+        count += 1
+        badge_path = d.output_images_dir / d.filename_category_badge(category, ".webp")
+        if force or not badge_path.exists():
+            print(f"  [{count}/{total}] Badge: {category}")
+            sprite = _get_marker_sprite(d, category)
+            if sprite is not None:
+                badge_path.parent.mkdir(parents=True, exist_ok=True)
+                sprite.save(str(badge_path), "WEBP", lossless=True)
+                sprite.close()
+        else:
+            print(f"  [{count}/{total}] Skip (exists): {badge_path.name}")
+
+    # 4a. Category highlight ring sprites — one shared image per category
+    cat_hl_files: dict[str, str] = {}  # category → filename (for JSON reference)
+    for category in sorted({poi.category for poi in pois}):
+        count += 1
+        hl_cat_file = d.filename_category_highlight(category, ".webp")
+        hl_cat_path = d.output_images_dir / hl_cat_file
+        cat_hl_files[category] = hl_cat_file
+        if force or not hl_cat_path.exists():
+            # Render using any POI of this category (ring size depends on
+            # category style — minor lat distortion is negligible)
+            sample_poi = next(p for p in pois if p.category == category)
+            print(f"  [{count}/{total}] Highlight ring: {category}")
+            hl_img, *_ = _make_highlight_sprite(d, sample_poi, with_symbol=False)
+            hl_img.save(str(hl_cat_path), "WEBP", lossless=True)
+            hl_img.close()
+        else:
+            print(f"  [{count}/{total}] Skip (exists): {hl_cat_path.name}")
+
+    # 4b. Per-POI position JSONs only — no per-POI WebP image
     for poi in pois:
+        count += 1
+        hl_json_path = (d.output_images_dir
+                        / d.filename_poi_highlight(poi.poi_id, ".json"))
         cat_label = d.category_style.get(poi.category, {}).get("label", poi.category)
-
-        # Highlight overlay (for Template 2 front: "Was ist das?")
-        count += 1
-        hl_path = d.output_images_dir / d.filename_poi_highlight(poi.poi_id, ".webp")
-        if force or not hl_path.exists():
-            print(f"  [{count}/{total}] {cat_label} {poi.name} (highlight)")
-            generate_poi_highlight_overlay(d, poi, hl_path)
+        if force or not hl_json_path.exists():
+            print(f"  [{count}/{total}] {cat_label} {poi.name} (position)")
+            lp, tp, wp, hp = _highlight_sprite_position(d, poi)
+            _save_highlight_position_json(
+                hl_json_path, cat_hl_files[poi.category], lp, tp, wp, hp
+            )
         else:
-            print(f"  [{count}/{total}] Skip (exists): {hl_path.name}")
+            print(f"  [{count}/{total}] Skip (exists): {hl_json_path.name}")
 
-        # Back overlay (for both template backs)
-        count += 1
-        back_path = d.output_images_dir / d.filename_poi_back(poi.poi_id, ".webp")
-        if force or not back_path.exists():
-            print(f"  [{count}/{total}] {cat_label} {poi.name} (back)")
-            generate_poi_highlight_overlay(d, poi, back_path)
-        else:
-            print(f"  [{count}/{total}] Skip (exists): {back_path.name}")
-
-    print(f"\n[POI-CARDS] Done. {total} images in {d.output_images_dir}")
+    print(f"\n[POI-CARDS] Done. {total} overlay files in {d.output_images_dir}")
 
 
 # ─── Sub-Region Support ──────────────────────────────────────────────────────
@@ -566,13 +1061,12 @@ def generate_all_sub_regions(
         # Build the sub-region POIDeck
         sub_deck = D.get_sub_region_poi_deck(region_name, sub_key)
 
-        # Ensure sub-region basemap exists.
-        # Try normal pipeline first; fall back to cropping from parent
-        # basemap when the DEM is unavailable.
+        # Ensure sub-region basemap + basemap_rot exist.
+        # Try normal pipeline first; fall back to cropping from parent when DEM unavailable.
         sub_bm_path = sub_deck.output_images_dir / sub_deck.filename_basemap()
         sub_bm_rot_path = sub_deck.output_images_dir / sub_deck.filename_basemap_rot()
 
-        # Basemap variants: (filename method on parent, sub output path, gen function)
+        # (fn_name_on_parent, sub_output_path, standalone_gen_func)
         _bm_variants = [
             ("filename_basemap",     sub_bm_path,     None),
             ("filename_basemap_rot", sub_bm_rot_path, generate_raster_basemap_rot),
@@ -595,22 +1089,21 @@ def generate_all_sub_regions(
                     )
         else:
             print(f"[BASEMAP] Already exists: {sub_bm_path.name}")
-            # Still ensure all rotated basemaps exist
-            for fn_name, sub_path, gen_func in _bm_variants[1:]:
-                if force or not sub_path.exists():
-                    if sub_deck.region.dem_tif.exists():
-                        gen_func(sub_deck, sub_path, force=force)
-                    else:
-                        tw, th = _compute_pixel_dims(sub_deck)
-                        parent_ext = (parent_deck.bbox_west, parent_deck.bbox_east,
-                                      parent_deck.bbox_south, parent_deck.bbox_north)
-                        sub_ext = (sub_deck.bbox_west, sub_deck.bbox_east,
-                                   sub_deck.bbox_south, sub_deck.bbox_north)
-                        parent_bm = parent_deck.output_images_dir / getattr(parent_deck, fn_name)()
-                        crop_basemap_from_parent(
-                            parent_bm, parent_ext, sub_ext,
-                            sub_path, tw, th,
-                        )
+            # Still ensure rotated basemap exists
+            if force or not sub_bm_rot_path.exists():
+                if sub_deck.region.dem_tif.exists():
+                    generate_raster_basemap_rot(sub_deck, sub_bm_rot_path, force=force)
+                else:
+                    tw, th = _compute_pixel_dims(sub_deck)
+                    parent_ext = (parent_deck.bbox_west, parent_deck.bbox_east,
+                                  parent_deck.bbox_south, parent_deck.bbox_north)
+                    sub_ext = (sub_deck.bbox_west, sub_deck.bbox_east,
+                               sub_deck.bbox_south, sub_deck.bbox_north)
+                    parent_bm = parent_deck.output_images_dir / parent_deck.filename_basemap_rot()
+                    crop_basemap_from_parent(
+                        parent_bm, parent_ext, sub_ext,
+                        sub_bm_rot_path, tw, th,
+                    )
 
         # Generate all overlay images for the sub-region deck
         # (skip basemap — already handled above)

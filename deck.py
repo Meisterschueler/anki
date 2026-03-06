@@ -99,7 +99,7 @@ LAKE_LINEWIDTH = 0.3
 LAKE_MIN_AREA_KM2 = 0.2           # Minimum lake area (km²) for OSM lakes
 
 # ─── Country borders ─────────────────────────────────────────────────────────
-COUNTRY_BORDER_COLOR = "#555555"
+COUNTRY_BORDER_COLOR = "#CC0000"
 COUNTRY_BORDER_WIDTH = 0.6
 COUNTRY_BORDER_STYLE = "--"
 
@@ -418,6 +418,14 @@ class POIDeck(BaseDeck):
         safe_id = poi_id.replace("/", "_")
         return f"{self.prefix}_poi_{safe_id}_back{ext}"
 
+    def filename_category_badge(self, category: str, ext: str = ".png") -> str:
+        """Small badge icon for a POI category (shared by all POIs of that type)."""
+        return f"{self.prefix}_badge_{category}{ext}"
+
+    def filename_category_highlight(self, category: str, ext: str = ".png") -> str:
+        """Shared highlight ring sprite for a POI category (all POIs same ring image)."""
+        return f"{self.prefix}_highlight_{category}{ext}"
+
     def filename_poi_highlight(self, poi_id: str, ext: str = ".png") -> str:
         """Overlay with just the highlight circle (for 'Was ist das?' front)."""
         safe_id = poi_id.replace("/", "_")
@@ -510,10 +518,13 @@ SUB_REGIONS: Dict[str, List[SubRegion]] = {
             bbox_west=10.8, bbox_east=12.3,
             bbox_south=47.23, bbox_north=47.78,
             cities=[
+                # parent-region cities within / near bbox
+                ("München",       11.576, 48.137,  0.05,  0.02),  # just outside N, visible after expansion
+                ("Innsbruck",     11.394, 47.267,  0.05, -0.02),
+                # local orientation
                 ("Kochel",        11.367, 47.659,  0.05,  0.02),
                 ("Bad Tölz",      11.556, 47.761,  0.05,  0.02),
                 ("Garmisch-P.",   11.096, 47.492,  0.05,  0.02),
-                ("Innsbruck",     11.394, 47.267,  0.05, -0.02),
                 ("Kufstein",      12.167, 47.583,  0.05,  0.02),
             ],
         ),
@@ -523,10 +534,41 @@ SUB_REGIONS: Dict[str, List[SubRegion]] = {
             bbox_west=10.8, bbox_east=11.9,
             bbox_south=46.9, bbox_north=47.5,
             cities=[
+                # parent-region cities within / near bbox
                 ("Innsbruck",     11.394, 47.267,  0.05,  0.02),
-                ("Garmisch-P.",   11.096, 47.492,  0.05, -0.02),
-                ("Ehrwald",       10.918, 47.395,  0.05,  0.02),
-                ("Telfs",         11.071, 47.307,  0.05,  0.02),
+                ("Innsbruck",     11.394, 47.267,  0.05, -0.02),
+                # local orientation
+                ("Kochel",        11.367, 47.659,  0.05,  0.02),
+                ("Bad Tölz",      11.556, 47.761,  0.05,  0.02),
+                ("Garmisch-P.",   11.096, 47.492,  0.05,  0.02),
+                ("Kufstein",      12.167, 47.583,  0.05,  0.02),
+                ("Mittenwald",    11.262, 47.443,  0.05,  0.02),
+                ("Weilheim",      11.152, 47.839,  0.05,  0.02),
+                ("Rosenheim",     12.128, 47.857,  0.05,  0.02),
+                ("Miesbach",      11.832, 47.789,  0.05,  0.02),
+                ("Scharnitz",     11.259, 47.384,  0.05,  0.02),
+            ],
+        ),
+    ],
+    "westalpen": [
+        SubRegion(
+            key="puimoisson",
+            label="Puimoisson",
+            bbox_west=5.0, bbox_east=7.5,
+            bbox_south=43.1, bbox_north=45.6,
+            cities=[
+                # parent-region cities within / near bbox (same offsets as westalpen.py)
+                ("Chambéry",      5.917, 45.564,  0.05,  0.02),
+                ("Grenoble",      5.724, 45.188,  0.05,  0.02),
+                ("Gap",           6.079, 44.560,  0.05,  0.02),
+                ("Briançon",      6.643, 44.898,  0.05, -0.02),
+                ("Nizza",         7.262, 43.700,  0.05,  0.02),
+                ("Marseille",     5.369, 43.297,  0.05,  0.02),
+                # local orientation
+                ("Digne",         6.236, 44.092,  0.05,  0.02),
+                ("Sisteron",      5.934, 44.200,  0.05,  0.02),
+                ("Barcelonnette", 6.652, 44.387,  0.05,  0.02),
+                ("Manosque",      5.790, 43.836,  0.05,  0.02),                
             ],
         ),
     ],
@@ -540,7 +582,7 @@ SUB_REGIONS: Dict[str, List[SubRegion]] = {
 
 POI_MULTI_DECK: Dict[str, dict] = {
     "ostalpen_pois": {
-        "parent_title": "Ostalpen Peak Soaring POIs",
+        "parent_title": "Ostalpen Marken",
         "sub_regions": [
             # (sub_region_key, subdeck_label)
             ("koenigsdorf", "A Königsdorf"),
@@ -559,16 +601,21 @@ POI_MULTI_DECK: Dict[str, dict] = {
         ],
     },
     "westalpen_pois": {
-        "parent_title": "Westalpen Peak Soaring POIs",
+        "parent_title": "Westalpen Marken",
+        "sub_regions": [
+            # (sub_region_key, subdeck_label)
+            ("puimoisson",  "A Puimoisson"),
+        ],
         "categories": [
-            ("peak",        "A Gipfel"),
-            ("pass",        "B Pässe"),
-            ("town",        "C Orte"),
-            ("valley",      "D Täler"),
-            ("lake",        "E Seen"),
-            ("landefeld_a", "F Landefelder Kat A"),
-            ("landefeld_b", "G Landefelder Kat B"),
-            ("airstrip",    "H Flugplätze"),
+            # (category_key, subdeck_label)
+            ("peak",        "B Gipfel"),
+            ("pass",        "C Pässe"),
+            ("town",        "D Orte"),
+            ("valley",      "E Täler"),
+            ("lake",        "F Seen"),
+            ("landefeld_a", "G Landefelder Kat A"),
+            ("landefeld_b", "H Landefelder Kat B"),
+            ("airstrip",    "I Flugplätze"),
         ],
     },
 }
@@ -638,7 +685,9 @@ def _combined_pois_for_region(region: Region):
         pass  # Landewiesen ZIP not available
 
     # Re-sort combined list by distance to reference airfield
-    origin = _SORT_ORIGIN.get(region.name, (47.820, 11.480))
+    # Sub-region names are "ostalpen_innsbruck" etc. – fall back to parent prefix.
+    _base = region.name.split("_")[0]
+    origin = _SORT_ORIGIN.get(region.name) or _SORT_ORIGIN.get(_base, (47.820, 11.480))
     combined.sort(key=lambda p: _haversine_km(
         origin[0], origin[1], p.lat, p.lon))
 

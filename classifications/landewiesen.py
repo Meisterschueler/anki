@@ -346,7 +346,9 @@ def landewiesen_for_region(region) -> List[POI]:
         if region.bbox_south <= p.lat <= region.bbox_north
         and region.bbox_west <= p.lon <= region.bbox_east
     ]
-    origin = _SORT_ORIGIN.get(region.name, (_KOENIGSDORF_LAT, _KOENIGSDORF_LON))
+    # Sub-region names are "ostalpen_innsbruck" etc. – fall back to parent prefix.
+    _base = region.name.split("_")[0]
+    origin = _SORT_ORIGIN.get(region.name) or _SORT_ORIGIN.get(_base, (_KOENIGSDORF_LAT, _KOENIGSDORF_LON))
     filtered.sort(key=lambda p: _haversine_km(origin[0], origin[1], p.lat, p.lon))
     return filtered
 
@@ -359,21 +361,23 @@ def pic_path(filename: str) -> Path:
 # ── Category display properties ──────────────────────────────────────────────
 CATEGORY_STYLE = {
     "landefeld_a": {
-        "marker": "^",
+        "marker": "o",
+        "letter": "A",
         "color": "#27AE60",
-        "size": 6,
+        "size": 12,
         "label": "Landefeld Kat A",
     },
     "landefeld_b": {
-        "marker": "v",
-        "color": "#E67E22",
-        "size": 6,
+        "marker": "o",
+        "letter": "B",
+        "color": "#CC0000",
+        "size": 12,
         "label": "Landefeld Kat B",
     },
     "airstrip": {
         "marker": "o",
         "color": "#2E86C1",
-        "size": 5,
+        "size": 12,
         "label": "Flugplatz",
     },
 }

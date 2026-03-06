@@ -200,49 +200,49 @@ PASSES = [
 # ═══════════════════════════════════════════════════════════════════════════════
 
 TOWNS = [
-    POI("town_01", "Landeck",                      "town", 47.14241, 10.57046),
-    POI("town_02", "Imst",                         "town", 47.23815, 10.74070),
-    POI("town_03", "Pfunds",                       "town", 46.99845, 10.58300),
-    POI("town_04", "Tösens",                       "town", 47.01771, 10.60768),
-    POI("town_05", "Bozen",                        "town", 46.49830, 11.35480),
-    POI("town_06", "Meran",                        "town", 46.67130, 11.15940),
-    POI("town_07", "Prad",                         "town", 46.61670, 10.59170),
-    POI("town_08", "Schluderns",                   "town", 46.66170, 10.58330),
-    POI("town_09", "Saalfelden",                   "town", 47.42640, 12.84890),
-    POI("town_10", "Kufstein",                     "town", 47.58330, 12.16670),
-    POI("town_11", "Erl",                          "town", 47.68167, 12.18083),
-    POI("town_12", "Bad Reichenhall",              "town", 47.72670, 12.87670),
-    POI("town_13", "Salzburg",                     "town", 47.80950, 13.05500),
-    POI("town_14", "Bischofshofen",                "town", 47.41670, 13.21670),
-    POI("town_15", "St. Johann im Pongau",         "town", 47.35000, 13.20000),
-    POI("town_16", "Radstadt",                     "town", 47.38330, 13.45830),
-    POI("town_17", "Obertauern",                   "town", 47.25000, 13.56670),
-    POI("town_18", "Wiener Neustadt",              "town", 47.81330, 16.24330),
-    POI("town_19", "Maribor",                      "town", 46.55750, 15.64670),
-    POI("town_20", "Füssen",                       "town", 47.57080, 10.70170),
-    POI("town_21", "Ehrwald",                      "town", 47.39500, 10.91830),
-    POI("town_22", "Kochel",                       "town", 47.65920, 11.36750),
-    POI("town_23", "Garmisch-Partenkirchen",       "town", 47.49170, 11.09580),
-    POI("town_24", "Telfs",                        "town", 47.30690, 11.07060),
-    POI("town_25", "Vorderriss",                   "town", 47.55889, 11.43611),
-    POI("town_26", "Benediktbeuern",               "town", 47.70830, 11.40280),
-    POI("town_27", "Bad Tölz",                     "town", 47.76060, 11.55610),
-    POI("town_28", "Spitzing",                     "town", 47.66170, 11.88580),
-    POI("town_29", "Schönau",                      "town", 47.60000, 12.98330),
-    POI("town_30", "Wörgl",                        "town", 47.48920, 12.06390),
-    POI("town_31", "Domodossola",                  "town", 46.11525,  8.29205),
-    POI("town_32", "Interlaken",                   "town", 46.68552,  7.85851),
-    POI("town_33", "Modane",                       "town", 45.20154,  6.67282),
-    POI("town_34", "Bardonecchia",                 "town", 45.07834,  6.70320),
-    POI("town_35", "Ivrea",                        "town", 45.46738,  7.87480),
-    POI("town_36", "Grenoble",                     "town", 45.18756,  5.73578),
-    POI("town_37", "Champsaur",                    "town", 44.65872,  6.12946),
-    POI("town_38", "Oulx",                         "town", 45.03305,  6.83251),
-    POI("town_39", "Le Rosier",                    "town", 44.93907,  6.68053),
-    POI("town_40", "Briançon",                     "town", 44.89840,  6.64363),
-    POI("town_41", "La Faurie",                    "town", 44.56738,  5.73995),
-    POI("town_42", "Châteauroux-les-Alpes",        "town", 44.61372,  6.52107),
-    POI("town_43", "Saint-Crépin",                 "town", 44.70633,  6.60713),
+    POI("town_01", "Landeck",                      "town", 47.14241, 10.57046,  817),  # wikidata/Q660183
+    POI("town_02", "Imst",                         "town", 47.23815, 10.74070,  827),  # overpass
+    POI("town_03", "Pfunds",                       "town", 46.99845, 10.58300,  970),  # wikidata/Q700407
+    POI("town_04", "Tösens",                       "town", 47.01771, 10.60768,  930),  # wikidata/Q689023
+    POI("town_05", "Bozen",                        "town", 46.49830, 11.35480,  262),  # lookup failed; Wikipedia-Erfahrungswert
+    POI("town_06", "Meran",                        "town", 46.67130, 11.15940,  325),  # wikidata/Q131605
+    POI("town_07", "Prad",                         "town", 46.61670, 10.59170,  915),  # wikidata/Q474174
+    POI("town_08", "Schluderns",                   "town", 46.66170, 10.58330,  921),  # wikidata/Q493790
+    POI("town_09", "Saalfelden",                   "town", 47.42640, 12.84890,  744),  # wikidata/Q183228
+    POI("town_10", "Kufstein",                     "town", 47.58330, 12.16670,  504),  # wikidata/Q486341
+    POI("town_11", "Erl",                          "town", 47.68167, 12.18083,  476),  # wikidata/Q871549
+    POI("town_12", "Bad Reichenhall",              "town", 47.72670, 12.87670,  470),  # wikidata/Q487971
+    POI("town_13", "Salzburg",                     "town", 47.80950, 13.05500,  424),  # wikidata/Q34713
+    POI("town_14", "Bischofshofen",                "town", 47.41670, 13.21670,  544),  # wikidata/Q254165
+    POI("town_15", "St. Johann im Pongau",         "town", 47.35000, 13.20000,  570),  # wikidata lookup lieferte Falschzuordnung; Wikipedia-Erfahrungswert
+    POI("town_16", "Radstadt",                     "town", 47.38330, 13.45830,  858),  # overpass
+    POI("town_17", "Obertauern",                   "town", 47.25000, 13.56670, 1738),  # wikipedia/Radstädter Tauern Pass
+    POI("town_18", "Wiener Neustadt",              "town", 47.81330, 16.24330,  265),  # wikidata/Q131612
+    POI("town_19", "Maribor",                      "town", 46.55750, 15.64670,  274),  # wikipedia/Maribor
+    POI("town_20", "Füssen",                       "town", 47.57080, 10.70170,  808),  # wikidata/Q262684
+    POI("town_21", "Ehrwald",                      "town", 47.39500, 10.91830,  994),  # wikidata/Q667088
+    POI("town_22", "Kochel",                       "town", 47.65920, 11.36750,  600),  # lookup failed; Kochelsee-Niveau ca. 600 m
+    POI("town_23", "Garmisch-Partenkirchen",       "town", 47.49170, 11.09580,  708),  # wikidata/Q127043
+    POI("town_24", "Telfs",                        "town", 47.30690, 11.07060,  634),  # overpass
+    POI("town_25", "Vorderriss",                   "town", 47.55889, 11.43611,  785),  # wikidata/Q2533797
+    POI("town_26", "Benediktbeuern",               "town", 47.70830, 11.40280,  617),  # wikidata/Q503628
+    POI("town_27", "Bad Tölz",                     "town", 47.76060, 11.55610,  658),  # wikidata/Q280491
+    POI("town_28", "Spitzing",                     "town", 47.66170, 11.88580, 1084),  # lookup failed; Spitzingsattel ca. 1084 m
+    POI("town_29", "Schönau",                      "town", 47.60000, 12.98330,  630),  # wikipedia lieferte Falschzuordnung; Schönau am Königssee ca. 630 m
+    POI("town_30", "Wörgl",                        "town", 47.48920, 12.06390,  513),  # overpass
+    POI("town_31", "Domodossola",                  "town", 46.11525,  8.29205,  272),  # wikidata/Q23325
+    POI("town_32", "Interlaken",                   "town", 46.68552,  7.85851,  571),  # wikidata/Q68103
+    POI("town_33", "Modane",                       "town", 45.20154,  6.67282, 1000),  # wikidata/Q537113
+    POI("town_34", "Bardonecchia",                 "town", 45.07834,  6.70320, 1312),  # wikidata/Q9039
+    POI("town_35", "Ivrea",                        "town", 45.46738,  7.87480,  255),  # wikidata/Q9409
+    POI("town_36", "Grenoble",                     "town", 45.18756,  5.73578,  212),  # wikidata/Q1289
+    POI("town_37", "Champsaur",                    "town", 44.65872,  6.12946,  993),  # wikidata/Q1086084
+    POI("town_38", "Oulx",                         "town", 45.03305,  6.83251, 1100),  # wikidata/Q9527
+    POI("town_39", "Le Rosier",                    "town", 44.93907,  6.68053, 1480),  # lookup failed; Erfahrungswert Col du Noyer-Gebiet
+    POI("town_40", "Briançon",                     "town", 44.89840,  6.64363, 1325),  # wikidata/Q203298
+    POI("town_41", "La Faurie",                    "town", 44.56738,  5.73995,  780),  # wikidata/Q631559
+    POI("town_42", "Châteauroux-les-Alpes",        "town", 44.61372,  6.52107,  811),  # wikidata/Q518200
+    POI("town_43", "Saint-Crépin",                 "town", 44.70633,  6.60713,  894),  # wikidata/Q1081340
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -312,7 +312,9 @@ def pois_for_region(region) -> list:
         if region.bbox_south <= p.lat <= region.bbox_north
         and region.bbox_west <= p.lon <= region.bbox_east
     ]
-    origin = _SORT_ORIGIN.get(region.name, (_KOENIGSDORF_LAT, _KOENIGSDORF_LON))
+    # Sub-region names are "ostalpen_innsbruck" etc. – fall back to parent prefix.
+    _base = region.name.split("_")[0]
+    origin = _SORT_ORIGIN.get(region.name) or _SORT_ORIGIN.get(_base, (_KOENIGSDORF_LAT, _KOENIGSDORF_LON))
     filtered.sort(key=lambda p: _haversine_km(origin[0], origin[1], p.lat, p.lon))
     return filtered
 
@@ -320,10 +322,10 @@ def pois_for_region(region) -> list:
 # ── Category display properties ──────────────────────────────────────────────
 CATEGORY_STYLE = {
     "peak":   {"marker": "^", "color": "#B22222", "size": 7, "label": "Gipfel"},
-    "pass":   {"marker": "o", "color": "#2E86C1", "size": 6, "label": "Pass"},
-    "town":   {"marker": "s", "color": "#1A1A1A", "size": 5, "label": "Ort"},
-    "valley": {"marker": "D", "color": "#27AE60", "size": 5, "label": "Tal"},
-    "lake":   {"marker": "H", "color": "#17A2B8", "size": 6, "label": "See"},
+    "pass":   {"marker": "o", "color": "#2E86C1", "size": 12, "label": "Pass"},
+    "town":   {"marker": "s", "color": "#1A1A1A", "size": 5,  "label": "Ort"},
+    "valley": {"marker": "D", "color": "#1A6B2E", "size": 12, "label": "Tal"},
+    "lake":   {"marker": "o", "color": "#3A9FD8", "size": 12, "label": "See"},
 }
 
 

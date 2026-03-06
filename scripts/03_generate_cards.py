@@ -55,8 +55,8 @@ render_cities = _bm.render_cities
 
 # matplotlib savefig params by mode
 _SAVE_PARAMS = {
-    "basemap": dict(format="png", facecolor="white", transparent=False),
-    "overlay": dict(format="png", facecolor="none",  transparent=True),
+    "basemap": dict(facecolor="white", transparent=False),
+    "overlay": dict(facecolor="none",  transparent=True),
 }
 
 
@@ -69,6 +69,9 @@ def save_figure(fig, output_path, overlay: bool = False, deck: Deck = None) -> N
         overlay: True for transparent lossless overlay, False for opaque lossy basemap
         deck: Unused, kept for API compatibility
     """
+    import io
+    from PIL import Image as _PILImage
+
     if not isinstance(output_path, Path):
         output_path = Path(output_path)
 
@@ -76,26 +79,25 @@ def save_figure(fig, output_path, overlay: bool = False, deck: Deck = None) -> N
     mode = "overlay" if overlay else "basemap"
     params = _SAVE_PARAMS[mode]
 
-    # Matplotlib cannot write WebP directly — save PNG then convert.
-    tmp_path = out_path.with_suffix(".png")
-
+    # Render into an in-memory PNG buffer (avoids a temp-file round-trip).
+    buf = io.BytesIO()
     try:
-        fig.savefig(str(tmp_path), dpi=D.FIGURE_DPI,
+        fig.savefig(buf, format="png", dpi=D.FIGURE_DPI,
                     pad_inches=0, edgecolor="none", **params)
     except Exception as e:
-        print(f"[ERROR] Failed to save {tmp_path}\n  {e}")
+        print(f"[ERROR] Failed to save {out_path}\n  {e}")
         return
+    buf.seek(0)
 
-    from PIL import Image as _PILImage
-    img = _PILImage.open(str(tmp_path))
+    img = _PILImage.open(buf)
+    img.load()           # fully decode before the buffer is reused
     if img.mode == "RGBA":
         # Transparent overlay → lossless WebP
         img.save(str(out_path), "WEBP", lossless=True)
     else:
-        # Opaque image → lossy WebP
+        # Opaque image → lossy WebP, method=6 (best compression)
         img.save(str(out_path), "WEBP", quality=D.BASEMAP_WEBP_QUALITY, method=6)
     img.close()
-    tmp_path.unlink()  # remove temporary PNG
 
 
 def _generate_basemap(d: Deck, force: bool = False) -> None:

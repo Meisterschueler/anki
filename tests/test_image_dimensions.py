@@ -66,10 +66,15 @@ class TestCardImages:
         if not image_dir.exists():
             pytest.skip(f"Directory not found: {image_dir}")
 
+        # Exclude sprite overlays (per-POI back/front) that have a JSON
+        # sidecar — sprites from different sub-region decks intentionally
+        # have different pixel dimensions.
         files = sorted(
             f for f in image_dir.glob("*_front.webp")
+            if not f.with_suffix(".json").exists()
         ) + sorted(
             f for f in image_dir.glob("*_back.webp")
+            if not f.with_suffix(".json").exists()
         )
         if not files:
             pytest.skip(f"No front/back WebP files in {image_dir}")
@@ -86,10 +91,14 @@ class TestAllToplevelImages:
             pytest.skip(f"Directory not found: {image_dir}")
 
         # glob("*.webp") only matches direct children, not subdirs
-        # Exclude thumbnails — they are intentionally smaller previews
+        # Exclude thumbnails — they are intentionally smaller previews.
+        # Exclude sprite overlays (per-POI highlight/back) — identified by a
+        # sibling .json sidecar — because they are small bounding-box crops and
+        # intentionally differ in size from the full-canvas shared layer images.
         files = sorted(
             f for f in image_dir.glob("*.webp")
             if "_thumb_" not in f.name
+            and not f.with_suffix(".json").exists()
         )
         if not files:
             pytest.skip(f"No WebP files in {image_dir}")
