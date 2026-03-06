@@ -50,54 +50,8 @@ render_question_mark = _bm.render_question_mark
 render_country_borders = _bm.render_country_borders
 render_cities = _bm.render_cities
 
-
-# ─── WebP save helper ────────────────────────────────────────────────────────
-
-# matplotlib savefig params by mode
-_SAVE_PARAMS = {
-    "basemap": dict(facecolor="white", transparent=False),
-    "overlay": dict(facecolor="none",  transparent=True),
-}
-
-
-def save_figure(fig, output_path, overlay: bool = False, deck: Deck = None) -> None:
-    """Save figure as WebP.
-
-    Args:
-        fig: Matplotlib figure
-        output_path: Destination path (extension forced to .webp)
-        overlay: True for transparent lossless overlay, False for opaque lossy basemap
-        deck: Unused, kept for API compatibility
-    """
-    import io
-    from PIL import Image as _PILImage
-
-    if not isinstance(output_path, Path):
-        output_path = Path(output_path)
-
-    out_path = output_path.with_suffix(".webp")
-    mode = "overlay" if overlay else "basemap"
-    params = _SAVE_PARAMS[mode]
-
-    # Render into an in-memory PNG buffer (avoids a temp-file round-trip).
-    buf = io.BytesIO()
-    try:
-        fig.savefig(buf, format="png", dpi=D.FIGURE_DPI,
-                    pad_inches=0, edgecolor="none", **params)
-    except Exception as e:
-        print(f"[ERROR] Failed to save {out_path}\n  {e}")
-        return
-    buf.seek(0)
-
-    img = _PILImage.open(buf)
-    img.load()           # fully decode before the buffer is reused
-    if img.mode == "RGBA":
-        # Transparent overlay → lossless WebP
-        img.save(str(out_path), "WEBP", lossless=True)
-    else:
-        # Opaque image → lossy WebP, method=6 (best compression)
-        img.save(str(out_path), "WEBP", quality=D.BASEMAP_WEBP_QUALITY, method=6)
-    img.close()
+# Shared save + context helpers (also used by 03b_generate_poi_cards)
+from render_utils import save_figure, generate_context  # noqa: E402
 
 
 def _generate_basemap(d: Deck, force: bool = False) -> None:
@@ -120,19 +74,6 @@ def generate_partition(d: Deck, output_path) -> None:
                         cities=False, borders=False,
                         rivers=False, lakes=False)
     render_polygons_colored(ax, d, show_ids=True)
-    save_figure(fig, output_path, overlay=True)
-    plt.close(fig)
-
-
-# ─── Context Layer (borders + cities) ────────────────────────────────────────
-
-def generate_context(d: Deck, output_path) -> None:
-    """Shared context overlay: country borders + city labels on transparent bg."""
-    fig, ax = create_figure(d)
-    ax.set_facecolor("none")
-    ax.patch.set_alpha(0.0)
-    render_country_borders(ax, d)
-    render_cities(ax, d)
     save_figure(fig, output_path, overlay=True)
     plt.close(fig)
 

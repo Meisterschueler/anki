@@ -57,10 +57,8 @@ _resolve_osm_file = _bm._resolve_osm_file
 render_country_borders = _bm.render_country_borders
 render_cities = _bm.render_cities
 
-# Import shared helpers from 03
-_cards = import_module("03_generate_cards")
-save_figure = _cards.save_figure
-generate_context = _cards.generate_context
+# Shared save + context helpers (lives in render_utils, NOT in 03)
+from render_utils import save_figure, generate_context
 
 
 def _generate_basemap(d, force: bool = False) -> None:
@@ -1036,11 +1034,16 @@ def generate_all_sub_regions(
     parent_deck: POIDeck,
     region_name: str,
     force: bool = False,
+    only_key: Optional[str] = None,
 ) -> None:
     """Generate basemaps, overlays, and thumbnails for all sub-region decks.
 
-    Called automatically when generating images for a POI deck that has
-    sub-regions configured in POI_MULTI_DECK.
+    Args:
+        parent_deck: The parent POIDeck whose output directory is shared.
+        region_name: Name of the region (e.g. ``'ostalpen'``).
+        force:       Overwrite existing files.
+        only_key:    When set, generate only the sub-region with this key.
+                     When ``None`` (default), generate all configured ones.
     """
     multi_cfg = D.POI_MULTI_DECK.get(f"{region_name}_pois")
     if not multi_cfg:
@@ -1051,6 +1054,8 @@ def generate_all_sub_regions(
     sub_by_key = {s.key: s for s in sub_regions}
 
     for sub_key, sub_label in sub_region_entries:
+        if only_key is not None and sub_key != only_key:
+            continue
         sub = sub_by_key.get(sub_key)
         if sub is None:
             print(f"[SUB-REGION] WARN: Unknown sub-region {sub_key!r}")
@@ -1123,49 +1128,114 @@ def generate_all_sub_regions(
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate POI card images")
-    D.add_deck_arguments(parser)
-    parser.add_argument("--ids", type=str,
-                        help="Comma-separated POI IDs (e.g. peak_01,pass_03)")
-    parser.add_argument("--force", action="store_true",
-                        help="Overwrite existing images")
+    parser = argparse.ArgumentParser(
+        description="Generate POI card images for Anki decks.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  python scripts/03b_generate_poi_cards.py --region ostalpen\n"
+            "  python scripts/03b_generate_poi_cards.py --region westalpen --force\n"
+            "  python scripts/03b_generate_poi_cards.py --region ostalpen "
+            "--ids peak_01,pass_03\n"
+            "  python scripts/03b_generate_poi_cards.py --region ostalpen "
+            "--sub-region koenigsdorf --force\n"
+        ),
+    )
+    # poi_mode=True: --system defaults to 'pois', choices restricted to POI
+    # systems, and --sub-region option is added automatically.
+    D.add_deck_arguments(parser, poi_mode=True)
+    parser.add_argument(
+        "--ids", type=str,
+        help="Comma-separated POI IDs to (re)generate in the main deck "
+             "(e.g. peak_01,pass_03).  Sub-region generation is unaffected.",
+    )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Overwrite existing images and remove stale overlay files.",
+    )
     args = parser.parse_args()
 
     d = D.get_deck(args.region, args.system)
     if not isinstance(d, POIDeck):
-        print(f"[ERROR] {args.system} is not a POI deck. Use 03_generate_cards.py instead.")
+        # Guard: should not reach here when poi_mode restricts choices.
+        print(f"[ERROR] '{args.system}' is not a POI deck. "
+              f"Use 03_generate_cards.py instead.")
         sys.exit(1)
 
-    # Determine which POIs
-    pois = None
-    if args.ids:
-        ids = [i.strip() for i in args.ids.split(",")]
-        pois = []
-        for i in ids:
-            try:
-                pois.append(d.poi_by_id(i))
-            except KeyError:
-                print(f"[WARN] Unknown POI ID: {i}")
+    # ── Sub-region exclusion ──────────────────────────────────────────────────
+    # Always compute the set of POIs claimed by sub-regions so we never
+    # render the same POI in both the main deck and a sub-region deck.
+    sub_poi_ids = D.get_all_sub_region_poi_ids(args.region)
 
-    # Exclude sub-region POIs from the main / full-region deck so that
-    # each POI only appears once (either in a sub-region or category deck).
-    if pois is None and not args.ids:
-        sub_poi_ids = D.get_all_sub_region_poi_ids(args.region)
+    # ── Determine which POIs to process in the main deck ──────────────────
+    if args.ids:
+        # Explicit selection — generate exactly the named POIs.
+        requested = [pid.strip() for pid in args.ids.split(",")]
+        main_pois = []
+        for pid in requested:
+            try:
+                poi = d.poi_by_id(pid)
+                if pid in sub_poi_ids:
+                    print(
+                        f"[WARN] POI {pid!r} ({poi.name}) belongs to a sub-region "
+                        f"deck; regenerating in main deck anyway. "
+                        f"Use --sub-region to regenerate the sub-region images."
+                    )
+                main_pois.append(poi)
+            except KeyError:
+                print(f"[WARN] Unknown POI ID: {pid!r}")
+        main_pois = main_pois or None
+    else:
+        # Automatic — exclude POIs that live in sub-region decks.
         if sub_poi_ids:
             main_pois = [p for p in d.pois if p.poi_id not in sub_poi_ids]
-            print(f"[POI-CARDS] Excluding {len(sub_poi_ids)} sub-region POIs "
-                  f"from main deck ({len(main_pois)} remaining)")
+            print(
+                f"[POI-CARDS] Excluding {len(sub_poi_ids)} sub-region POIs "
+                f"from main deck ({len(main_pois)} remaining)"
+            )
         else:
             main_pois = None
-    else:
-        main_pois = pois
 
-    # Generate main deck images
+    # ── --force pre-cleanup ──────────────────────────────────────────────────
+    # Mirrors 03_generate_cards.py so stale files from renamed/removed POIs
+    # are never left behind.
+    if args.force and d.output_images_dir.exists():
+        if args.ids:
+            # Targeted cleanup: remove only the selected POIs' position JSONs.
+            for poi in (main_pois or []):
+                json_path = (
+                    d.output_images_dir
+                    / d.filename_poi_highlight(poi.poi_id, ".json")
+                )
+                if json_path.exists():
+                    json_path.unlink()
+        else:
+            # Full cleanup: remove all overlay files except the basemaps.
+            basemap_names = {d.filename_basemap(), d.filename_basemap_rot()}
+            prefix = d.prefix
+            for pattern in (
+                f"{prefix}_badge_*.webp",
+                f"{prefix}_highlight_*.webp",
+                f"{prefix}_poi_*.json",
+                f"{prefix}_partition.webp",
+                f"{prefix}_context.webp",
+                f"{prefix}_allpois.webp",
+            ):
+                for f in d.output_images_dir.glob(pattern):
+                    if f.name not in basemap_names:
+                        f.unlink()
+
+    # ── Generate main deck images ───────────────────────────────────────────────
     generate_all(d, pois=main_pois, force=args.force)
 
-    # Generate sub-region images if configured (POI_MULTI_DECK)
-    if not args.ids:
-        generate_all_sub_regions(d, args.region, force=args.force)
+    # ── Generate sub-region images ──────────────────────────────────────────────
+    # Controlled by --sub-region (all / none / <key>), not by --ids.
+    sub_region_mode = args.sub_region
+    if sub_region_mode != "none":
+        only_key = None if sub_region_mode == "all" else sub_region_mode
+        generate_all_sub_regions(
+            d, args.region, force=args.force, only_key=only_key
+        )
 
 
 if __name__ == "__main__":

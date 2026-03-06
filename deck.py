@@ -519,7 +519,6 @@ SUB_REGIONS: Dict[str, List[SubRegion]] = {
             bbox_south=47.23, bbox_north=47.78,
             cities=[
                 # parent-region cities within / near bbox
-                ("München",       11.576, 48.137,  0.05,  0.02),  # just outside N, visible after expansion
                 ("Innsbruck",     11.394, 47.267,  0.05, -0.02),
                 # local orientation
                 ("Kochel",        11.367, 47.659,  0.05,  0.02),
@@ -535,7 +534,6 @@ SUB_REGIONS: Dict[str, List[SubRegion]] = {
             bbox_south=46.9, bbox_north=47.5,
             cities=[
                 # parent-region cities within / near bbox
-                ("Innsbruck",     11.394, 47.267,  0.05,  0.02),
                 ("Innsbruck",     11.394, 47.267,  0.05, -0.02),
                 # local orientation
                 ("Kochel",        11.367, 47.659,  0.05,  0.02),
@@ -946,19 +944,51 @@ def get_deck(region: str = "ostalpen", system: Optional[str] = None) -> Deck:
     return _decks[key]
 
 
-def add_deck_arguments(parser) -> None:
-    """Add --region and --system CLI arguments to an ArgumentParser."""
+def add_deck_arguments(parser, poi_mode: bool = False) -> None:
+    """Add --region and --system CLI arguments to an ArgumentParser.
+
+    Args:
+        parser:   argparse.ArgumentParser to extend.
+        poi_mode: When True (used by 03b_generate_poi_cards), restricts
+                  ``--system`` choices to POI systems only and defaults to
+                  ``"pois"``.  Also adds a ``--sub-region`` option.
+    """
     parser.add_argument(
         "--region",
         choices=list(REGION_DEFAULTS.keys()),
         default="ostalpen",
         help="Which region to process (default: ostalpen)",
     )
-    valid_systems = sorted({s for ss in VALID_COMBINATIONS.values() for s in ss})
+    if poi_mode:
+        valid_systems  = sorted(_POI_SYSTEMS)
+        default_system = "pois"
+        sys_help       = "POI classification system (default: pois)"
+    else:
+        valid_systems  = sorted({s for ss in VALID_COMBINATIONS.values() for s in ss})
+        default_system = None
+        sys_help       = "Classification system (default: region-dependent)"
     parser.add_argument(
         "--system",
         choices=valid_systems,
-        default=None,
-        help="Classification system (default: region-dependent)",
+        default=default_system,
+        help=sys_help,
     )
+    if poi_mode:
+        all_sub_keys = sorted({
+            sub.key
+            for subs in SUB_REGIONS.values()
+            for sub in subs
+        })
+        parser.add_argument(
+            "--sub-region",
+            dest="sub_region",
+            choices=["all", "none"] + all_sub_keys,
+            default="all",
+            help=(
+                "Sub-region generation mode: 'all' (default) generates all "
+                "configured sub-regions; 'none' skips sub-regions; a key "
+                "(" + ", ".join(f"'{k}'" for k in all_sub_keys) + ") "
+                "generates only that one sub-region."
+            ),
+        )
 
