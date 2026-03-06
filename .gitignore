@@ -20,8 +20,17 @@ output/
 
 # Temporary / scratch files
 _test_*.png
+_symbol_*.png
+_bench_*.py
+_*_elevations.json
+*_out.txt
 _inspect_apkg.py
 _poi_coords.json
+
+# Scratch scripts and preview images under scripts/
+scripts/_*.py
+scripts/_*.png
+scripts/lookup_town_elevations.py
 
 # IDE
 .vscode/
