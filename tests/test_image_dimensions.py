@@ -5,11 +5,13 @@ Three test cases per deck:
   1. All basemap layers (hillshade, lakes, rivers, ocean_mask) must match.
   2. All card images (front/back WebPs) must match.
   3. All top-level images in images/ (excl. _basemap_layers/) must match.
+  4. lakes.png and rivers.png must contain non-transparent pixels (not empty/stale).
 """
 
 from pathlib import Path
 from typing import Dict, Tuple
 
+import numpy as np
 import pytest
 from PIL import Image
 
@@ -91,13 +93,15 @@ class TestAllToplevelImages:
             pytest.skip(f"Directory not found: {image_dir}")
 
         # glob("*.webp") only matches direct children, not subdirs
-        # Exclude thumbnails — they are intentionally smaller previews.
-        # Exclude sprite overlays (per-POI highlight/back) — identified by a
-        # sibling .json sidecar — because they are small bounding-box crops and
-        # intentionally differ in size from the full-canvas shared layer images.
+        # Exclude thumbnails — intentionally smaller previews.
+        # Exclude per-POI sprite overlays — identified by a sibling .json sidecar.
+        # Exclude per-category badge/highlight sprites — small fixed-size icons
+        # that intentionally differ from the full-canvas layer images.
         files = sorted(
             f for f in image_dir.glob("*.webp")
             if "_thumb_" not in f.name
+            and "_badge_" not in f.name
+            and "_highlight_" not in f.name
             and not f.with_suffix(".json").exists()
         )
         if not files:
@@ -105,3 +109,27 @@ class TestAllToplevelImages:
 
         sizes = _collect_sizes(files)
         _assert_uniform_dimensions(sizes)
+
+
+class TestBasemapLayerContent:
+    """lakes.png and rivers.png must contain visible (non-transparent) pixels.
+
+    An all-transparent layer means the basemap was cached before the OSM source
+    data was downloaded — a stale-cache bug that causes the basemap to appear
+    without lakes or rivers.
+    """
+
+    @pytest.mark.parametrize("layer_name", ["lakes.png", "rivers.png"])
+    def test_layer_has_visible_pixels(self, basemap_layers_dir, layer_name):
+        layer_path = basemap_layers_dir / layer_name
+        if not layer_path.exists():
+            pytest.skip(f"Layer not built yet: {layer_path}")
+
+        arr = np.array(Image.open(layer_path))
+        nonzero = int((arr[:, :, 3] > 0).sum())
+        assert nonzero > 0, (
+            f"{layer_name} in {basemap_layers_dir} is fully transparent "
+            f"(0 visible pixels). The layer was likely cached before the OSM "
+            f"source data was downloaded. Delete the stale file and re-run "
+            f"02_generate_basemap.py to regenerate it."
+        )

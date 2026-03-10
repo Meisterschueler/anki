@@ -138,6 +138,36 @@ def _layer_dir(d: Deck) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# Layer cache helpers: sidecar .deps.json for content-based invalidation
+# ---------------------------------------------------------------------------
+
+def _read_deps(path: Path) -> "dict | None":
+    """Read the sidecar deps file for *path*, or None if absent/corrupt."""
+    import json
+    dep = path.with_suffix(path.suffix + ".deps.json")
+    if dep.exists():
+        try:
+            return json.loads(dep.read_text())
+        except Exception:
+            return None
+    return None
+
+
+def _write_deps(path: Path, deps: dict) -> None:
+    """Write *deps* as a sidecar .deps.json next to *path*."""
+    import json
+    dep = path.with_suffix(path.suffix + ".deps.json")
+    dep.write_text(json.dumps(deps))
+
+
+def _is_stale(path: Path, current_deps: dict) -> bool:
+    """Return True if *path* is missing or its stored deps differ from *current_deps*."""
+    if not path.exists():
+        return True
+    return _read_deps(path) != current_deps
+
+
+# ---------------------------------------------------------------------------
 # Layer 1: Hillshade + ocean mask  (RGB PNG, opaque)
 # ---------------------------------------------------------------------------
 
@@ -151,15 +181,21 @@ def _render_hillshade_layer(
     from rasterio.windows import from_bounds as window_from_bounds
     from PIL import Image
 
-    if not force and layer_path.exists():
-        print(f"[HILLSHADE] cached: {layer_path.name}")
-        return
-
     if not d.dem_tif.exists():
         print("[WARN] DEM not found. Run 01_download_data.py first.")
         return
 
     w_px, h_px = _compute_pixel_dims(d)
+    current_deps = {
+        "dem_mtime": d.dem_tif.stat().st_mtime,
+        "azimuth":   round(azimuth, 4),
+        "bbox":      [d.bbox_west, d.bbox_east, d.bbox_south, d.bbox_north],
+        "w_px": w_px, "h_px": h_px,
+    }
+    if not force and not _is_stale(layer_path, current_deps):
+        print(f"[HILLSHADE] cached: {layer_path.name}")
+        return
+
     HS_BUF = 4  # extra pixels for hillshade edge gradients
 
     with rasterio.open(str(d.dem_tif)) as src:
@@ -222,6 +258,7 @@ def _render_hillshade_layer(
     Image.fromarray((ocean_cropped * 255).astype(np.uint8), "L").save(
         str(ocean_path), "PNG")
 
+    _write_deps(layer_path, current_deps)
     print(f"[HILLSHADE] saved: {layer_path.name}")
 
 
@@ -235,11 +272,21 @@ def _render_lakes_layer(d: Deck, layer_path: Path, force: bool = False) -> None:
     from rasterio import features as rio_features
     from PIL import Image
 
-    if not force and layer_path.exists():
-        print(f"[LAKES-L] cached: {layer_path.name}")
+    osm_fp = _resolve_osm_file(d.osm_lakes_geojson)
+    if not osm_fp.exists():
+        print(f"[LAKES-L] ERROR: OSM source missing: {d.osm_lakes_geojson}")
         return
 
     w_px, h_px = _compute_pixel_dims(d)
+    current_deps = {
+        "osm_mtime": osm_fp.stat().st_mtime,
+        "bbox":      [d.bbox_west, d.bbox_east, d.bbox_south, d.bbox_north],
+        "w_px": w_px, "h_px": h_px,
+    }
+    if not force and not _is_stale(layer_path, current_deps):
+        print(f"[LAKES-L] cached: {layer_path.name}")
+        return
+
     out_transform = from_bounds(
         d.bbox_west, d.bbox_south, d.bbox_east, d.bbox_north,
         w_px, h_px,
@@ -266,6 +313,7 @@ def _render_lakes_layer(d: Deck, layer_path: Path, force: bool = False) -> None:
             print(f"[LAKES-L] rasterized {len(lake_shapes)} lakes")
 
     Image.fromarray(rgba, "RGBA").save(str(layer_path), "PNG")
+    _write_deps(layer_path, current_deps)
     print(f"[LAKES-L] saved: {layer_path.name}")
 
 
@@ -278,11 +326,21 @@ def _render_rivers_layer(d: Deck, layer_path: Path, force: bool = False) -> None
     from rasterio.transform import from_bounds
     from PIL import Image, ImageDraw
 
-    if not force and layer_path.exists():
-        print(f"[RIVERS-L] cached: {layer_path.name}")
+    osm_fp = _resolve_osm_file(d.osm_rivers_geojson)
+    if not osm_fp.exists():
+        print(f"[RIVERS-L] ERROR: OSM source missing: {d.osm_rivers_geojson}")
         return
 
     w_px, h_px = _compute_pixel_dims(d)
+    current_deps = {
+        "osm_mtime": osm_fp.stat().st_mtime,
+        "bbox":      [d.bbox_west, d.bbox_east, d.bbox_south, d.bbox_north],
+        "w_px": w_px, "h_px": h_px,
+    }
+    if not force and not _is_stale(layer_path, current_deps):
+        print(f"[RIVERS-L] cached: {layer_path.name}")
+        return
+
     rivers = _load_osm_rivers(d)
 
     # Start with fully transparent RGBA
@@ -335,6 +393,7 @@ def _render_rivers_layer(d: Deck, layer_path: Path, force: bool = False) -> None
         print(f"[RIVERS-L] rasterized {len(rivers)} rivers (AA {ss}x)")
 
     Image.fromarray(rgba, "RGBA").save(str(layer_path), "PNG")
+    _write_deps(layer_path, current_deps)
     print(f"[RIVERS-L] saved: {layer_path.name}")
 
 
@@ -447,6 +506,7 @@ def crop_basemap_from_parent(
     target_w: int,
     target_h: int,
     north_up: bool = True,
+    force: bool = False,
 ) -> bool:
     """Crop the parent basemap to *sub_extent* and resize to target dims.
 
@@ -468,6 +528,7 @@ def crop_basemap_from_parent(
         target_w: Target pixel width.
         target_h: Target pixel height.
         north_up: True for normal basemap, False for south-up rotated.
+        force: Overwrite even if deps are up to date.
     """
     from PIL import Image
 
@@ -475,6 +536,17 @@ def crop_basemap_from_parent(
         print(f"[BASEMAP-CROP] ERROR: Parent basemap not found: "
               f"{parent_basemap_path}")
         return False
+
+    current_deps = {
+        "parent_mtime": parent_basemap_path.stat().st_mtime,
+        "sub_extent":   list(sub_extent),
+        "target_w": target_w, "target_h": target_h,
+        "north_up": north_up,
+    }
+    if not force and not _is_stale(output_path, current_deps):
+        size_kb = output_path.stat().st_size / 1024
+        print(f"[BASEMAP-CROP] cached: {output_path.name} ({size_kb:,.0f} KB)")
+        return True
 
     img = Image.open(str(parent_basemap_path))
     pw, ph = img.size
@@ -519,6 +591,7 @@ def crop_basemap_from_parent(
     resized.save(str(output_path), "WEBP",
                  quality=D.BASEMAP_WEBP_QUALITY, method=6)
 
+    _write_deps(output_path, current_deps)
     size_kb = output_path.stat().st_size / 1024
     print(f"[BASEMAP-CROP] Cropped from parent: {output_path.name} "
           f"({size_kb:,.0f} KB, {target_w}x{target_h} px)")
@@ -551,12 +624,6 @@ def generate_raster_basemap(
     """
     from PIL import Image
 
-    if not force and not force_hillshade and not force_lakes \
-            and not force_rivers and output_path.exists():
-        size_kb = output_path.stat().st_size / 1024
-        print(f"[BASEMAP] Already exists: {output_path.name} ({size_kb:,.0f} KB)")
-        return
-
     output_path.parent.mkdir(parents=True, exist_ok=True)
     layers = _layer_dir(d)
 
@@ -564,10 +631,27 @@ def generate_raster_basemap(
     lk_path = layers / "lakes.png"
     rv_path = layers / "rivers.png"
 
-    # Render individual layers (skipped when cached)
+    # Render individual layers (each manages its own deps-based cache)
     _render_hillshade_layer(d, hs_path, force=force or force_hillshade)
     _render_lakes_layer(d, lk_path, force=force or force_lakes)
     _render_rivers_layer(d, rv_path, force=force or force_rivers)
+
+    # Abort cleanly if any required layer is missing (DEM or OSM not yet downloaded)
+    missing = [p.name for p in (hs_path, lk_path, rv_path) if not p.exists()]
+    if missing:
+        print(f"[BASEMAP] Cannot composite — missing layers: {', '.join(missing)}")
+        return
+
+    # Deps-based composite cache check (only depends on the layer files themselves)
+    current_deps = {
+        "hs_mtime": hs_path.stat().st_mtime,
+        "lk_mtime": lk_path.stat().st_mtime,
+        "rv_mtime": rv_path.stat().st_mtime,
+    }
+    if not force and not _is_stale(output_path, current_deps):
+        size_kb = output_path.stat().st_size / 1024
+        print(f"[BASEMAP] Already exists: {output_path.name} ({size_kb:,.0f} KB)")
+        return
 
     # Composite: hillshade (RGB) + lakes (RGBA) + rivers (RGBA)
     #   Rivers under lakes are erased at pixel level (much faster than
@@ -595,6 +679,7 @@ def generate_raster_basemap(
     final = base.convert("RGB")
     final.save(str(output_path), "WEBP", quality=D.BASEMAP_WEBP_QUALITY, method=6)
 
+    _write_deps(output_path, current_deps)
     size_kb = output_path.stat().st_size / 1024
     w_px, h_px = _compute_pixel_dims(d)
     print(f"[BASEMAP] Done: {output_path.name} ({size_kb:,.0f} KB, {w_px}x{h_px} px)")
@@ -615,11 +700,6 @@ def generate_raster_basemap_rot(
     """
     from PIL import Image
 
-    if not force and output_path.exists():
-        size_kb = output_path.stat().st_size / 1024
-        print(f"[BASEMAP-ROT] Already exists: {output_path.name} ({size_kb:,.0f} KB)")
-        return
-
     output_path.parent.mkdir(parents=True, exist_ok=True)
     layers = _layer_dir(d)
 
@@ -628,18 +708,25 @@ def generate_raster_basemap_rot(
     _render_hillshade_layer(d, hs_rot_path, force=force,
                             azimuth=D.HILLSHADE_AZIMUTH_ROT)
 
-    if not hs_rot_path.exists():
-        print("[BASEMAP-ROT] Hillshade (rot) could not be generated — "
-              "DEM missing.  Run 01_download_data.py first.")
-        return
-
-    # Reuse lakes, rivers, ocean mask from the normal basemap build
+    # Reuse lakes and rivers from the normal basemap build (same layer dir)
     lk_path = layers / "lakes.png"
     rv_path = layers / "rivers.png"
 
-    if not lk_path.exists() or not rv_path.exists():
-        print("[BASEMAP-ROT] lakes/rivers layers missing — "
-              "run normal basemap generation first.")
+    # Abort cleanly if any required layer is missing
+    missing = [p.name for p in (hs_rot_path, lk_path, rv_path) if not p.exists()]
+    if missing:
+        print(f"[BASEMAP-ROT] Cannot composite — missing layers: {', '.join(missing)}")
+        return
+
+    # Deps-based composite cache check
+    current_deps = {
+        "hs_rot_mtime": hs_rot_path.stat().st_mtime,
+        "lk_mtime":     lk_path.stat().st_mtime,
+        "rv_mtime":     rv_path.stat().st_mtime,
+    }
+    if not force and not _is_stale(output_path, current_deps):
+        size_kb = output_path.stat().st_size / 1024
+        print(f"[BASEMAP-ROT] Already exists: {output_path.name} ({size_kb:,.0f} KB)")
         return
 
     # Composite (same logic as generate_raster_basemap)
@@ -664,6 +751,7 @@ def generate_raster_basemap_rot(
     final = base.convert("RGB")
     final.save(str(output_path), "WEBP", quality=D.BASEMAP_WEBP_QUALITY, method=6)
 
+    _write_deps(output_path, current_deps)
     size_kb = output_path.stat().st_size / 1024
     w_px, h_px = _compute_pixel_dims(d)
     print(f"[BASEMAP-ROT] Done: {output_path.name} "
