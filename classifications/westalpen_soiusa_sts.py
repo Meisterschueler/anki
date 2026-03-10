@@ -127,7 +127,7 @@ GROUPS: List[Gebirgsgruppe] = [
     Gebirgsgruppe("12.3", "Waadtländer Alpen",                            SZ12, "Les Diablerets (3210 m)",               "Alpi di Vaud"),
 
     # SZ 13 — Glarner Alpen  (Alpi Glaronesi)
-    Gebirgsgruppe("13.1", "Glarner Alpen i. e. S.",                       SZ13, "Tödi (3614 m)",                         "Alpi Glaronesi p.d."),
+    Gebirgsgruppe("13.1", "Glarner Alpen i. e. S.",                       SZ13, "Tödi (3614 m)",                         "Alpi Glaronesi p,d,"),
     Gebirgsgruppe("13.2", "Urner-Glarner Alpen",                          SZ13, "Clariden (3267 m)",                     "Alpi Urano-Glaronesi"),
 
     # SZ 14 — Schweizerische Voralpen  (Prealpi Svizzere)

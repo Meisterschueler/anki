@@ -24,6 +24,8 @@ _symbol_*.png
 _bench_*.py
 _*_elevations.json
 *_out.txt
+build_all.txt
+run_soiusa.txt
 _inspect_apkg.py
 _poi_coords.json
 
