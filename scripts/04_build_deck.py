@@ -15,6 +15,7 @@ To regenerate manually:
 
 import argparse
 import hashlib
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -391,6 +392,63 @@ def _build_group_notes(
     return notes, skipped
 
 
+# ─── Media validation ─────────────────────────────────────────────────────────
+
+# Regex to extract filenames from src="..." in note HTML fields.
+# Matches src="filename.ext" (no path separators expected in Anki media names).
+_SRC_RE = re.compile(r'src="([^"]+)"')
+
+
+def _extract_media_refs_from_notes(decks) -> set[str]:
+    """Extract all unique src="..." filenames from all notes in one or more decks.
+
+    Returns a set of filenames (basenames) that are referenced in the HTML.
+    """
+    deck_list = decks if isinstance(decks, list) else [decks]
+    refs: set[str] = set()
+    for dk in deck_list:
+        for note in dk.notes:
+            for field_val in note.fields:
+                for m in _SRC_RE.finditer(field_val):
+                    refs.add(m.group(1))
+    return refs
+
+
+def _validate_media_completeness(
+    decks,
+    media_files: list[str],
+    *,
+    label: str = "APKG",
+) -> None:
+    """Ensure every src="..." reference in notes has a matching media file.
+
+    Compares HTML-referenced filenames (basenames) against the basenames
+    of the paths in ``media_files``.  Raises ``RuntimeError`` if any
+    referenced file is missing — the deck would display broken images.
+    """
+    referenced = _extract_media_refs_from_notes(decks)
+    if not referenced:
+        return
+
+    provided = {Path(p).name for p in media_files}
+    missing = referenced - provided
+
+    if missing:
+        sorted_missing = sorted(missing)
+        msg_lines = [f"[{label}] ERROR: {len(sorted_missing)} media file(s) "
+                     f"referenced in notes but NOT in media_files:"]
+        for name in sorted_missing[:20]:
+            msg_lines.append(f"  - {name}")
+        if len(sorted_missing) > 20:
+            msg_lines.append(f"  ... and {len(sorted_missing) - 20} more")
+        full_msg = "\n".join(msg_lines)
+        print(full_msg)
+        raise RuntimeError(full_msg)
+
+    print(f"[{label}] Media OK: {len(referenced)} referenced, "
+          f"{len(provided)} provided ({len(provided) - len(referenced)} extra)")
+
+
 # ─── Shared APKG writer ──────────────────────────────────────────────────────
 
 def _write_apkg(
@@ -409,8 +467,15 @@ def _write_apkg(
         media_files: List of media file paths to include.
         label: Log prefix (e.g. "APKG", "APKG-POI").
         title: Human-readable deck title for the summary line.
+
+    Raises:
+        RuntimeError: If any media file referenced in note HTML fields
+            is not present in media_files.
     """
     apkg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # ── Validate: every src="..." in note fields must be in media_files ──
+    _validate_media_completeness(decks, media_files, label=label)
 
     is_multi = isinstance(decks, list)
     package = genanki.Package(decks)
