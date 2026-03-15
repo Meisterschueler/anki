@@ -49,6 +49,8 @@ render_parent_polygon = _bm.render_parent_polygon
 render_question_mark = _bm.render_question_mark
 render_country_borders = _bm.render_country_borders
 render_cities = _bm.render_cities
+compute_neighbors = _bm.compute_neighbors
+render_neighbor_overlay = _bm.render_neighbor_overlay
 
 # Shared save + context helpers (also used by 03b_generate_poi_cards)
 from render_utils import save_figure, generate_context  # noqa: E402
@@ -164,7 +166,27 @@ def _render_title_box(fig, ax, d: Deck, group) -> None:
     ax.add_patch(box)
 
 
-# ─── Batch Generation ────────────────────────────────────────────────────────
+def generate_neighbor_card(d: Deck, group, neighbor_refs, output_path):
+    """Neighbor overlay: target polygon (red) + neighbours (black) with names."""
+    fig, ax = create_figure(d)
+    render_full_basemap(ax, d, cities=False, borders=False,
+                        rivers=False, lakes=False,
+                        svg_mode=False, overlay_mode=True)
+    render_neighbor_overlay(ax, d, group.osm_ref, set(neighbor_refs))
+    save_figure(fig, output_path, overlay=True)
+    plt.close(fig)
+
+
+# ─── Batch Generation ────────────────────────────────────────────────────────────
+
+def _has_neighbor_subdeck(d: Deck) -> bool:
+    """True when the deck participates in a SUBDECK_MERGE with a neighbor entry."""
+    for key, entries in D.SUBDECK_MERGE.items():
+        if key.startswith(f"{d.region.name}_"):
+            for entry in entries:
+                if entry[0] == d.classification.name and len(entry) > 2 and entry[2] == "neighbor":
+                    return True
+    return False
 
 def generate_all(d: Deck, groups=None, force=False):
     """Generate basemap + partition + per-group WebP images.
@@ -181,6 +203,9 @@ def generate_all(d: Deck, groups=None, force=False):
     _generate_basemap(d, force=force)
 
     total = 2 + 2 * len(groups)
+    need_neighbors = _has_neighbor_subdeck(d)
+    if need_neighbors:
+        total += len(groups)
     count = 0
 
     print(f"[CARDS] Generating {total} overlay images for {d.title} …")
@@ -223,6 +248,21 @@ def generate_all(d: Deck, groups=None, force=False):
         else:
             print(f"  [{count}/{total}] Skip (exists): {path2.name}")
 
+    # 4. Neighbor overlays (for "B Nachbarn" subdeck)
+    if need_neighbors:
+        nb_map = compute_neighbors(d)
+        for group in groups:
+            count += 1
+            nb_path = d.output_images_dir / d.filename_group_neighbors(
+                group.group_id, ".webp")
+            nb_refs = nb_map.get(group.osm_ref, [])
+            if force or not nb_path.exists():
+                print(f"  [{count}/{total}] Group {group.group_id}: "
+                      f"{group.name} (neighbors, {len(nb_refs)})")
+                generate_neighbor_card(d, group, nb_refs, nb_path)
+            else:
+                print(f"  [{count}/{total}] Skip (exists): {nb_path.name}")
+
     print(f"\n[CARDS] Done. {total} images in {d.output_images_dir}")
 
 
@@ -264,6 +304,7 @@ def main():
                 for name in [
                     d.filename_group_front(g.group_id, ".webp"),
                     d.filename_group_back(g.group_id, ".webp"),
+                    d.filename_group_neighbors(g.group_id, ".webp"),
                 ]:
                     p = d.output_images_dir / name
                     if p.exists():

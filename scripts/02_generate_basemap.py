@@ -1191,6 +1191,86 @@ def render_question_mark(ax, d: Deck, ref) -> None:
 
 
 # ===========================================================================
+# NEIGHBOR OVERLAY — for "B Nachbarn" deck
+# ===========================================================================
+
+def compute_neighbors(d: Deck) -> dict:
+    """Return {osm_ref: [neighbor_osm_ref, …]} for every group in *d*.
+
+    Two groups are considered neighbours when their GeoJSON polygons
+    touch or share a boundary.  A tiny buffer (1e-5°, ≈1 m) is applied
+    before the intersection test to tolerate GeoJSON digitisation gaps.
+    """
+    gdf = load_polygons(d)
+    if gdf.empty:
+        return {}
+
+    # Collect (ref, geometry) for valid groups
+    items = []
+    for _, row in gdf.iterrows():
+        ref = _get_ref(row, d)
+        if d.has_osm_ref(ref):
+            items.append((ref, row.geometry))
+
+    neighbors: dict = {ref: [] for ref, _ in items}
+    for i, (ref_a, geom_a) in enumerate(items):
+        for j in range(i + 1, len(items)):
+            ref_b, geom_b = items[j]
+            if geom_a.intersects(geom_b.buffer(1e-5)):
+                neighbors[ref_a].append(ref_b)
+                neighbors[ref_b].append(ref_a)
+    return neighbors
+
+
+def render_neighbor_overlay(ax, d: Deck, ref, neighbor_refs) -> None:
+    """Draw the target group (red) + its neighbours (black) with name labels.
+
+    Target:    red outline (#cc0000, lw=2.0) + black name label.
+    Neighbors: black outline (#000000, lw=1.5) + black "Name (ID)" label.
+    """
+    gdf = load_polygons(d)
+    if gdf.empty:
+        return
+
+    target_geom = None
+    nb_geoms = []  # (geom, group)
+
+    for _, row in gdf.iterrows():
+        r = _get_ref(row, d)
+        if r == ref:
+            target_geom = row.geometry
+        elif r in neighbor_refs:
+            nb_geoms.append((row.geometry, d.group_by_osm_ref(r)))
+
+    # Draw neighbour polygons first (lower zorder)
+    for geom, group in nb_geoms:
+        ax.add_geometries([geom], crs=ccrs.PlateCarree(),
+                          facecolor="none", edgecolor="#000000",
+                          linewidth=1.5, alpha=1.0, zorder=6)
+        lp = _label_point(geom)
+        ax.text(lp.x, lp.y, f"{group.name}\n({group.group_id})",
+                transform=ccrs.PlateCarree(),
+                fontsize=8, fontweight="bold",
+                color="black", ha="center", va="center", zorder=7,
+                bbox=dict(facecolor="white", edgecolor="none",
+                          alpha=0.7, pad=1.5))
+
+    # Draw target polygon on top
+    if target_geom is not None:
+        target_group = d.group_by_osm_ref(ref)
+        ax.add_geometries([target_geom], crs=ccrs.PlateCarree(),
+                          facecolor="none", edgecolor="#cc0000",
+                          linewidth=2.0, alpha=1.0, zorder=6)
+        lp = _label_point(target_geom)
+        ax.text(lp.x, lp.y, target_group.name,
+                transform=ccrs.PlateCarree(),
+                fontsize=9, fontweight="bold",
+                color="black", ha="center", va="center", zorder=7,
+                bbox=dict(facecolor="white", edgecolor="none",
+                          alpha=0.7, pad=1.5))
+
+
+# ===========================================================================
 # CITIES
 # ===========================================================================
 

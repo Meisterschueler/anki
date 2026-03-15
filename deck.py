@@ -352,6 +352,11 @@ class Deck(BaseDeck):
         safe_id = group_id.replace("/", "_")
         return f"{self.prefix}_group_{safe_id}_back{ext}"
 
+    def filename_group_neighbors(self, group_id: str, ext: str = ".png") -> str:
+        """Generate filename for neighbor overlay (B Nachbarn deck)."""
+        safe_id = group_id.replace("/", "_")
+        return f"{self.prefix}_group_{safe_id}_neighbors{ext}"
+
     # ── Delegation ───────────────────────────────────────────────────────
 
     def __getattr__(self, name: str):
@@ -470,7 +475,7 @@ VALID_COMBINATIONS: Dict[str, List[str]] = {
 # .apkg with Anki subdecks (Parent::Child naming).  The second system
 # redirects to the first with a hint message.
 # Format:  "region_primary_system" -> [(system, subdeck_label), ...]
-SUBDECK_MERGE: Dict[str, List[Tuple[str, str]]] = {
+SUBDECK_MERGE: Dict[str, list] = {
     "ostalpen_soiusa": [
         ("soiusa_sz",  "A Gliederung"),
         ("soiusa_sts", "B Details"),
@@ -478,6 +483,10 @@ SUBDECK_MERGE: Dict[str, List[Tuple[str, str]]] = {
     "westalpen_soiusa": [
         ("soiusa_sz",  "A Gliederung"),
         ("soiusa_sts", "B Details"),
+    ],
+    "ostalpen_ave84": [
+        ("ave84", "A Positionen"),
+        ("ave84", "B Nachbarn", "neighbor"),
     ],
 }
 
@@ -882,7 +891,7 @@ def _merge_key_for(region_name: str, system_name: str) -> Optional[str]:
     """Return the SUBDECK_MERGE key if this system is part of a merge, else None."""
     for key, entries in SUBDECK_MERGE.items():
         if key.startswith(f"{region_name}_"):
-            if any(s == system_name for s, _ in entries):
+            if any(e[0] == system_name for e in entries):
                 return key
     return None
 

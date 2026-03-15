@@ -293,6 +293,120 @@ def _group_model(model_id: int, model_name: str) -> genanki.Model:
     )
 
 
+# \u2500\u2500\u2500 Neighbor model \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500-
+
+_TMPL_NB_FRONT = (
+    '<div class="nb-question">\n'
+    '<div class="name">{{Name}}</div>\n'
+    '<div class="group-id">({{Group_ID}})</div>\n'
+    '<div class="nb-prompt">Wie lauten die Nachbarn?</div>\n'
+    '</div>\n'
+)
+
+_TMPL_NB_BACK = (
+    '<div class="answer-info">\n'
+    '<div class="name">{{Name}} ({{Group_ID}})</div>\n'
+    '</div>\n'
+    '<hr>\n'
+    '<div class="card-map">\n'
+    '{{Basemap}}\n'
+    '{{BasemapRot}}\n'
+    '{{Partition}}\n'
+    '{{Context}}\n'
+    '{{BackOverlay}}\n'
+    '<button class="hint-btn" onclick="var i=this.parentNode.querySelector(\'img.partition\');var v=i.style.display!==\'block\';i.style.display=v?\'block\':\'none\';this.textContent=v?\'\\u2716 Einteilung\':\'\\u25a6 Einteilung\';sessionStorage.setItem(\'ps_et\',v?\'1\':\'0\');">&#9638; Einteilung</button>\n'
+    '<button class="hint-btn" style="left:110px;" onclick="var i=this.parentNode.querySelector(\'img.context\');var v=i.style.display!==\'block\';i.style.display=v?\'block\':\'none\';this.textContent=v?\'\\u2716 Kontext\':\'\\u25a6 Kontext\';sessionStorage.setItem(\'ps_ctx\',v?\'1\':\'0\');">&#9638; Kontext</button>\n'
+    '<div class="compass-btn" onclick="' + _COMPASS_ONCLICK + '">' + _NORDPFEIL_SVG + '</div>\n'
+    '</div>\n'
+    '<script>' + _SESSION_RESTORE_GROUP + '</script>\n'
+)
+
+_NB_CSS = _APKG_CSS + """\
+.nb-question {
+    margin: 30px 0;
+}
+.nb-question .name {
+    font-weight: bold;
+    font-size: 22px;
+}
+.nb-question .group-id {
+    color: #555;
+    font-size: 16px;
+    margin-bottom: 20px;
+}
+.nb-question .nb-prompt {
+    font-size: 18px;
+    margin-top: 20px;
+    color: #333;
+}
+"""
+
+
+def _neighbor_model(model_id: int, model_name: str) -> genanki.Model:
+    """Anki model for the neighbor card type (B Nachbarn)."""
+    return genanki.Model(
+        model_id,
+        model_name,
+        fields=[
+            {"name": "Group_ID"},
+            {"name": "Name"},
+            {"name": "Basemap"},
+            {"name": "BasemapRot"},
+            {"name": "BackOverlay"},
+            {"name": "Partition"},
+            {"name": "Context"},
+        ],
+        templates=[
+            {
+                "name": "Nachbarn",
+                "qfmt": _TMPL_NB_FRONT,
+                "afmt": _TMPL_NB_BACK,
+            },
+        ],
+        css=_NB_CSS,
+    )
+
+
+def _build_neighbor_notes(
+    d: Deck,
+    model: genanki.Model,
+    groups: list,
+    layers: dict,
+    media_files: list,
+) -> tuple:
+    """Build notes for the neighbor subdeck (B Nachbarn)."""
+    notes = []
+    skipped = 0
+
+    for group in groups:
+        nb_file = d.filename_group_neighbors(group.group_id, ".webp")
+        nb_path = d.output_images_dir / nb_file
+
+        if not nb_path.exists():
+            skipped += 1
+            print(f"[APKG] WARN: Missing neighbor overlay for group "
+                  f"{group.group_id} ({group.name})")
+            continue
+
+        media_files.append(str(nb_path))
+
+        note = genanki.Note(
+            model=model,
+            fields=[
+                group.group_id,
+                group.name,
+                layers["basemap_html"],
+                layers["basemap_rot_html"],
+                f'<img class="overlay" src="{nb_file}">',
+                layers["partition_html"],
+                layers["context_html"],
+            ],
+        )
+        notes.append(note)
+
+    return notes, skipped
+
+
 def _collect_group_layers(d: Deck, media_files: list) -> dict:
     """Validate and collect shared layer image paths for a group deck.
 
@@ -511,7 +625,7 @@ def generate_apkg(d: Deck) -> None:
     deck_title = f"Gebirgsgruppen der {region_label}"
 
     base = f"peak_soaring_{d.name}"
-    _MODEL_VER = 5
+    _MODEL_VER = 6
     model_id = int(hashlib.sha256(f"{base}_model_v{_MODEL_VER}".encode()).hexdigest()[:8], 16)
     deck_id = int(hashlib.sha256(f"{base}_deck".encode()).hexdigest()[:8], 16)
 
@@ -551,12 +665,17 @@ def generate_apkg_combined(region_name: str, merge_key: str) -> None:
     basemap from the first subdeck is shared across all subdecks.
     """
     merge_entries = D.SUBDECK_MERGE[merge_key]
+    # Normalise to 3-tuples: (system, label, card_type)
+    norm_entries = [
+        (e[0], e[1], e[2] if len(e) > 2 else "group")
+        for e in merge_entries
+    ]
     sub_decks_cfg = [
-        (D.get_deck(region_name, system), label)
-        for system, label in merge_entries
+        (D.get_deck(region_name, system), label, card_type)
+        for system, label, card_type in norm_entries
     ]
 
-    for d_sub, _ in sub_decks_cfg:
+    for d_sub, _, _ in sub_decks_cfg:
         _ensure_images(d_sub)
 
     # ── Shared identity ────────────────────────────────────────────────────
@@ -565,16 +684,23 @@ def generate_apkg_combined(region_name: str, merge_key: str) -> None:
     parent_title = f"Gebirgsgruppen der {region_label}"
 
     base = f"peak_soaring_{merge_key}"
-    _MODEL_VER = 5
-    model_id = int(hashlib.sha256(f"{base}_combined_model_v{_MODEL_VER}".encode()).hexdigest()[:8], 16)
-    model = _group_model(model_id, parent_title)
+    _MODEL_VER = 6
+    group_model_id = int(hashlib.sha256(
+        f"{base}_combined_model_v{_MODEL_VER}".encode()
+    ).hexdigest()[:8], 16)
+    group_model = _group_model(group_model_id, parent_title)
+
+    nb_model_id = int(hashlib.sha256(
+        f"{base}_neighbor_model_v{_MODEL_VER}".encode()
+    ).hexdigest()[:8], 16)
+    nb_model = _neighbor_model(nb_model_id, f"{parent_title} Nachbarn")
 
     media_files: list[str] = []
     anki_subdecks: list = []
     total_skipped = 0
 
     # ── Build each subdeck ───────────────────────────────────────────────
-    for d_sub, label in sub_decks_cfg:
+    for d_sub, label, card_type in sub_decks_cfg:
         subdeck_title = f"{parent_title}::{label}"
         subdeck_id = int(hashlib.sha256(
             f"{base}_{label}_deck".encode()
@@ -586,9 +712,14 @@ def generate_apkg_combined(region_name: str, merge_key: str) -> None:
         if layers is None:
             return
 
-        notes, skipped = _build_group_notes(
-            d_sub, model, d_sub.groups, layers, media_files,
-        )
+        if card_type == "neighbor":
+            notes, skipped = _build_neighbor_notes(
+                d_sub, nb_model, d_sub.groups, layers, media_files,
+            )
+        else:
+            notes, skipped = _build_group_notes(
+                d_sub, group_model, d_sub.groups, layers, media_files,
+            )
         for n in notes:
             anki_deck.add_note(n)
 
@@ -1232,7 +1363,7 @@ def main():
             print(f"=== Building POI APKG for: {d.title} ===\n")
             generate_apkg_poi(d)
     elif merge_key:
-        labels = " + ".join(lbl for _, lbl in D.SUBDECK_MERGE[merge_key])
+        labels = " + ".join(e[1] for e in D.SUBDECK_MERGE[merge_key])
         print(f"=== Building combined APKG ({labels}) for: {d.title} ===\n")
         generate_apkg_combined(args.region, merge_key)
     else:
