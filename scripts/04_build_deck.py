@@ -698,6 +698,7 @@ def generate_apkg_combined(region_name: str, merge_key: str) -> None:
     media_files: list[str] = []
     anki_subdecks: list = []
     total_skipped = 0
+    layers_cache: dict[str, dict] = {}   # keyed by d.name
 
     # ── Build each subdeck ───────────────────────────────────────────────
     for d_sub, label, card_type in sub_decks_cfg:
@@ -708,9 +709,13 @@ def generate_apkg_combined(region_name: str, merge_key: str) -> None:
 
         anki_deck = genanki.Deck(subdeck_id, subdeck_title)
 
-        layers = _collect_group_layers(d_sub, media_files)
-        if layers is None:
-            return
+        if d_sub.name in layers_cache:
+            layers = layers_cache[d_sub.name]
+        else:
+            layers = _collect_group_layers(d_sub, media_files)
+            if layers is None:
+                return
+            layers_cache[d_sub.name] = layers
 
         if card_type == "neighbor":
             notes, skipped = _build_neighbor_notes(
