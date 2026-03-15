@@ -3,8 +3,8 @@ Peak Soaring POIs — Points of Interest for glider pilots
 =========================================================
 Based on the book "Peak Soaring" by Benjamin Bachmaier.
 
-214 POIs across the Alps:
-  - 81 peaks  (▲)
+215 POIs across the Alps:
+  - 82 peaks  (▲)
   - 59 passes (⬤)
   - 24 valleys (◆)
   - 43 towns  (■)
@@ -39,7 +39,7 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PEAKS  (81)
+# PEAKS  (82)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 PEAKS = [
@@ -281,13 +281,13 @@ VALLEYS = [
 # ═══════════════════════════════════════════════════════════════════════════════
 
 LAKES = [
-    POI("lake_01", "Reschensee",                   "lake", 46.81670, 10.53330, 1498),
-    POI("lake_02", "Achensee",                     "lake", 47.43330, 11.71670,  929),
-    POI("lake_03", "Tegernsee",                    "lake", 47.71300, 11.75830,  726),
-    POI("lake_04", "Lago Maggiore",                "lake", 45.95000,  8.65000,  193),
-    POI("lake_05", "Lac de Sainte-Croix",          "lake", 43.76000,  6.18000,  477),
-    POI("lake_06", "Lac de Serre-Ponçon",          "lake", 44.53000,  6.33000,  780),
-    POI("lake_07", "Genfer See",                   "lake", 46.45000,  6.52000,  372),
+    POI("lake_01", "Reschensee",                   "lake", 46.80274, 10.52807, 1498),
+    POI("lake_02", "Achensee",                     "lake", 47.45698, 11.71190,  929),
+    POI("lake_03", "Tegernsee",                    "lake", 47.71884, 11.73874,  726),
+    POI("lake_04", "Lago Maggiore",                "lake", 45.96799,  8.65355,  193),
+    POI("lake_05", "Lac de Sainte-Croix",          "lake", 43.76623,  6.18462,  477),
+    POI("lake_06", "Lac de Serre-Ponçon",          "lake", 44.50521,  6.35007,  780),
+    POI("lake_07", "Genfer See",                   "lake", 46.41735,  6.52840,  372),
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════════

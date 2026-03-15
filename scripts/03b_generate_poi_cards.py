@@ -640,16 +640,19 @@ def _get_marker_sprite(d: POIDeck, category: str) -> "PIL.Image.Image | None":
         _MARKER_SPRITE_CACHE[key] = None
         return None
 
-    # Sprite size: markersize in pt × (DPI/72) pixels, plus 20% padding
+    # Sprite size: markersize in pt × (DPI/72) pixels, plus padding
     import deck as _D
     sz_pt = style.get("size", 10)
-    sz_px = int(sz_pt * (_D.FIGURE_DPI / 72) * 1.4)
+    sz_px = int(sz_pt * (_D.FIGURE_DPI / 72) * 1.6)
     sz_px = max(sz_px, 10)
 
-    # Build a tiny figure with a single marker centred on (0.5, 0.5)
-    fig_s, ax_s = plt.subplots(figsize=(sz_px / _D.FIGURE_DPI,
-                                        sz_px / _D.FIGURE_DPI),
-                                dpi=_D.FIGURE_DPI)
+    # Build a tiny figure with a single marker centred on (0.5, 0.5).
+    # Use add_axes([0,0,1,1]) so the axes fills the figure with zero margins —
+    # plt.subplots() leaves default subplot padding (~12 % on each side) which
+    # shifts the marker ~1 px off-centre in the saved sprite.
+    fig_s = plt.figure(figsize=(sz_px / _D.FIGURE_DPI, sz_px / _D.FIGURE_DPI),
+                       dpi=_D.FIGURE_DPI)
+    ax_s = fig_s.add_axes([0, 0, 1, 1])
     ax_s.set_xlim(0, 1); ax_s.set_ylim(0, 1)
     ax_s.set_aspect("equal"); ax_s.axis("off")
     ax_s.set_facecolor("none"); fig_s.patch.set_alpha(0.0)
@@ -664,37 +667,37 @@ def _get_marker_sprite(d: POIDeck, category: str) -> "PIL.Image.Image | None":
     if letter:
         ax_s.plot(0.5, 0.5, marker="o", color="white",
                   markeredgecolor="black", markeredgewidth=0.5,
-                  markersize=sz_pt * 0.9, linewidth=0)
+                  markersize=sz_pt, linewidth=0)
         ax_s.text(0.5, 0.5, letter, color=style["color"],
-                  fontsize=sz_pt * 0.9 * 0.52, fontweight="bold",
+                  fontsize=sz_pt * 0.52, fontweight="bold",
                   ha="center", va="center_baseline")
     elif category == "pass":
         ax_s.plot(0.5, 0.5, marker=_PASS_PATH, color=style["color"],
-                  markersize=sz_pt * 0.9, markeredgewidth=0, linewidth=0)
+                  markersize=sz_pt, markeredgewidth=0, linewidth=0)
     elif category == "valley":
         ax_s.plot(0.5, 0.5, marker=_VALLEY_PATH, color=style["color"],
-                  markersize=sz_pt * 0.9, markeredgewidth=0, linewidth=0)
+                  markersize=sz_pt, markeredgewidth=0, linewidth=0)
     elif category == "lake":
         # Pass 1 – white circle with black edge
         ax_s.plot(0.5, 0.5, marker="o", color="white",
                   markeredgecolor="black", markeredgewidth=0.5,
-                  markersize=sz_pt * 0.9, linewidth=0)
+                  markersize=sz_pt, linewidth=0)
         # Pass 2 – two blue wave lines (open path, no fill)
         ax_s.plot(0.5, 0.5, marker=_LAKE_PATH, color="none",
                   markeredgecolor=style["color"], markeredgewidth=0.7,
-                  markersize=sz_pt * 0.9, linewidth=0)
+                  markersize=sz_pt, linewidth=0)
     elif category == "airstrip":
         # Pass 1 – black runway bar (1.5× markersize so bar protrudes r/2 beyond circle)
         ax_s.plot(0.5, 0.5, marker=_AIRSTRIP_BAR, color="black",
-                  markersize=sz_pt * 0.9 * 1.5, markeredgewidth=0, linewidth=0)
+                  markersize=sz_pt * 1.5, markeredgewidth=0, linewidth=0)
         # Pass 2 – white circle with black edge (sz matches cat A/B)
         ax_s.plot(0.5, 0.5, marker="o", color="white",
                   markeredgecolor="black", markeredgewidth=0.5,
-                  markersize=sz_pt * 0.9, linewidth=0)
+                  markersize=sz_pt, linewidth=0)
     else:
         ax_s.plot(0.5, 0.5, marker=style.get("marker", "o"),
                   color=style["color"],
-                  markersize=sz_pt * 0.9,
+                  markersize=sz_pt,
                   markeredgecolor="white", markeredgewidth=0.3,
                   linewidth=0)
 
@@ -739,8 +742,8 @@ def _make_highlight_sprite(d: POIDeck, poi: POI, with_symbol: bool = False):
     Much faster to save than a full-canvas image (~17ms vs ~250ms).
 
     Returns:
-        (sprite_img, left_pct, top_pct, width_pct) where the CSS percentages
-        describe where to position the sprite over the full map canvas.
+        (sprite_img, left_pct, top_pct, width_pct, height_pct) where the CSS
+        percentages describe where to position the sprite over the full map canvas.
     """
     from PIL import Image as _PIL, ImageDraw as _Draw
 
@@ -818,21 +821,34 @@ def _highlight_sprite_position(d: "POIDeck", poi) -> tuple:
     return x0 / w * 100, y0 / h * 100, (x1 - x0) / w * 100, (y1 - y0) / h * 100
 
 
-def _save_highlight_position_json(json_path, sprite_file: str,
-                                  left_pct, top_pct, width_pct, height_pct) -> None:
-    """Write a JSON sidecar with CSS position + shared sprite filename.
+def _save_highlight_position_json(json_path, sprite_file,
+                                  left_pct, top_pct, width_pct, height_pct,
+                                  *, badge_box=None) -> None:
+    """Write a JSON sidecar with CSS position + optional sprite filename.
 
-    No WebP image is written — the sprite is shared per-category.
+    sprite_file: shared category sprite filename, or None for a full-canvas
+                 per-POI overlay (e.g. valley polygon WebPs).
+    badge_box:   optional (left, top, width, height) in percent for the back
+                 overlay badge.  Required when the highlight covers the full
+                 canvas (left=0, top=0, width=100, height=100) so the badge
+                 is still placed at a meaningful position.
     """
     import json as _json
     from pathlib import Path as _Path
     meta = {
-        "sprite_file": sprite_file,
         "left_pct":    round(left_pct,   6),
         "top_pct":     round(top_pct,    6),
         "width_pct":   round(width_pct,  6),
         "height_pct":  round(height_pct, 6),
     }
+    if sprite_file is not None:
+        meta["sprite_file"] = sprite_file
+    if badge_box is not None:
+        bl, bt, bw, bh = badge_box
+        meta["badge_left_pct"]   = round(bl, 6)
+        meta["badge_top_pct"]    = round(bt, 6)
+        meta["badge_width_pct"]  = round(bw, 6)
+        meta["badge_height_pct"] = round(bh, 6)
     _Path(json_path).write_text(_json.dumps(meta))
 
 
@@ -942,20 +958,53 @@ def generate_all(d: POIDeck, pois=None, force=False):
         else:
             print(f"  [{count}/{total}] Skip (exists): {hl_cat_path.name}")
 
-    # 4b. Per-POI position JSONs only — no per-POI WebP image
+    # 4b. Per-POI highlight images / position JSONs
+    #
+    # Valley POIs whose name matches the GeoJSON get a full-canvas matplotlib
+    # polygon overlay (per-POI WebP).  All other POIs share the category ring
+    # sprite and only write a small position JSON.
+    valley_polys = _get_valley_polygons(d) if any(
+        p.category == "valley" for p in pois
+    ) else {}
+
     for poi in pois:
         count += 1
         hl_json_path = (d.output_images_dir
                         / d.filename_poi_highlight(poi.poi_id, ".json"))
         cat_label = d.category_style.get(poi.category, {}).get("label", poi.category)
-        if force or not hl_json_path.exists():
-            print(f"  [{count}/{total}] {cat_label} {poi.name} (position)")
-            lp, tp, wp, hp = _highlight_sprite_position(d, poi)
-            _save_highlight_position_json(
-                hl_json_path, cat_hl_files[poi.category], lp, tp, wp, hp
-            )
+
+        # Check for valley polygon match
+        vpoly = None
+        if poi.category == "valley" and valley_polys:
+            vpoly = _match_valley_polygon(poi, valley_polys)
+
+        if vpoly is not None:
+            # Valley with polygon: generate per-POI matplotlib highlight WebP
+            hl_webp_path = (d.output_images_dir
+                            / d.filename_poi_highlight(poi.poi_id, ".webp"))
+            if force or not hl_webp_path.exists():
+                print(f"  [{count}/{total}] {cat_label} {poi.name} (polygon)")
+                generate_poi_highlight_overlay(d, poi, hl_webp_path)
+            else:
+                print(f"  [{count}/{total}] Skip (exists): {hl_webp_path.name}")
+            if force or not hl_json_path.exists():
+                # Badge position from the regular ellipse ring (same ring size)
+                bl, bt, bw, bh = _highlight_sprite_position(d, poi)
+                # sprite_file=None → _poi_overlay_html falls back to per-POI WebP
+                _save_highlight_position_json(
+                    hl_json_path, None,
+                    0.0, 0.0, 100.0, 100.0,
+                    badge_box=(bl, bt, bw, bh),
+                )
         else:
-            print(f"  [{count}/{total}] Skip (exists): {hl_json_path.name}")
+            if force or not hl_json_path.exists():
+                print(f"  [{count}/{total}] {cat_label} {poi.name} (position)")
+                lp, tp, wp, hp = _highlight_sprite_position(d, poi)
+                _save_highlight_position_json(
+                    hl_json_path, cat_hl_files[poi.category], lp, tp, wp, hp
+                )
+            else:
+                print(f"  [{count}/{total}] Skip (exists): {hl_json_path.name}")
 
     print(f"\n[POI-CARDS] Done. {total} overlay files in {d.output_images_dir}")
 

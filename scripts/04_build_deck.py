@@ -860,20 +860,29 @@ def _poi_badge_in_ring_html(images_dir, highlight_webp_file: str,
         return f'<img class="overlay" src="{badge_file}">'
 
     meta = _json.loads(json_path.read_text())
-    lp = meta["left_pct"]
-    tp = meta["top_pct"]
-    wp = meta["width_pct"]
-    hp = meta["height_pct"]
 
-    # Centre of the ring (as % of full canvas)
-    cx = lp + wp / 2
-    cy = tp + hp / 2
+    # Valley polygon overlays store an explicit badge bounding-box so the
+    # symbol is centred on the POI location, not on the full canvas.
+    if "badge_left_pct" in meta:
+        bl = meta["badge_left_pct"]
+        bt = meta["badge_top_pct"]
+        bw = meta["badge_width_pct"]
+        bh = meta["badge_height_pct"]
+    else:
+        lp = meta["left_pct"]
+        tp = meta["top_pct"]
+        wp = meta["width_pct"]
+        hp = meta["height_pct"]
 
-    # Badge size: ~70 % of ring bounding box, centred on ring
-    bw = wp * 0.70
-    bh = hp * 0.70
-    bl = cx - bw / 2
-    bt = cy - bh / 2
+        # Centre of the ring (as % of full canvas)
+        cx = lp + wp / 2
+        cy = tp + hp / 2
+
+        # Badge size: ~70 % of ring bounding box, centred on ring
+        bw = wp * 0.70
+        bh = hp * 0.70
+        bl = cx - bw / 2
+        bt = cy - bh / 2
 
     # transform-origin aligned with the map centre (50 %, 50 % of .card-map)
     ox = (50.0 - bl) / bw * 100.0
@@ -940,6 +949,11 @@ def _build_poi_notes(
             if hl_sprite_path.exists():
                 media_files.append(str(hl_sprite_path))
             _hl_sprite_media_set.add(str(hl_sprite_path))
+
+        # Valley polygon highlights use a per-POI WebP (full-canvas overlay)
+        per_poi_hl_path = d.output_images_dir / highlight_file
+        if per_poi_hl_path.exists():
+            media_files.append(str(per_poi_hl_path))
 
         # Category badge — centred inside the highlight ring on the back face
         badge_file = d.filename_category_badge(poi.category, ".webp")
