@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 import geopandas as gpd
+import matplotlib.patheffects as pe
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -1225,8 +1226,9 @@ def compute_neighbors(d: Deck) -> dict:
 def render_neighbor_overlay(ax, d: Deck, ref, neighbor_refs) -> None:
     """Draw the target group (red) + its neighbours (black) with name labels.
 
-    Target:    red outline (#cc0000, lw=2.0) + black name label.
-    Neighbors: black outline (#000000, lw=1.5) + black "Name (ID)" label.
+    Target:    red outline (#cc0000, lw=2.0), no label.
+    Neighbors: black outline (#000000, lw=1.5) + black "Name (ID)" label
+               with white stroke outline for readability.
     """
     gdf = load_polygons(d)
     if gdf.empty:
@@ -1252,22 +1254,13 @@ def render_neighbor_overlay(ax, d: Deck, ref, neighbor_refs) -> None:
                 transform=ccrs.PlateCarree(),
                 fontsize=8, fontweight="bold",
                 color="black", ha="center", va="center", zorder=7,
-                bbox=dict(facecolor="white", edgecolor="none",
-                          alpha=0.7, pad=1.5))
+                path_effects=[pe.withStroke(linewidth=3, foreground="white")])
 
-    # Draw target polygon on top
+    # Draw target polygon on top (no label)
     if target_geom is not None:
-        target_group = d.group_by_osm_ref(ref)
         ax.add_geometries([target_geom], crs=ccrs.PlateCarree(),
                           facecolor="none", edgecolor="#cc0000",
                           linewidth=2.0, alpha=1.0, zorder=6)
-        lp = _label_point(target_geom)
-        ax.text(lp.x, lp.y, target_group.name,
-                transform=ccrs.PlateCarree(),
-                fontsize=9, fontweight="bold",
-                color="black", ha="center", va="center", zorder=7,
-                bbox=dict(facecolor="white", edgecolor="none",
-                          alpha=0.7, pad=1.5))
 
 
 # ===========================================================================
