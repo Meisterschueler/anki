@@ -295,10 +295,16 @@ def _group_model(model_id: int, model_name: str) -> genanki.Model:
 
 # \u2500\u2500\u2500 Neighbor model \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500-
 
+_TMPL_ERKENNEN_FRONT = (
+    '<div class="nb-question">\n'
+    '<div class="name">{{Name}} ({{Group_ID}})</div>\n'
+    '<div class="nb-prompt">visualisiere!</div>\n'
+    '</div>\n'
+)
+
 _TMPL_NB_FRONT = (
     '<div class="nb-question">\n'
-    '<div class="name">{{Name}}</div>\n'
-    '<div class="group-id">({{Group_ID}})</div>\n'
+    '<div class="name">{{Name}} ({{Group_ID}})</div>\n'
     '<div class="nb-prompt">Wie lauten die Nachbarn?</div>\n'
     '</div>\n'
 )
@@ -323,16 +329,12 @@ _TMPL_NB_BACK = (
 
 _NB_CSS = _APKG_CSS + """\
 .nb-question {
+    text-align: center;
     margin: 30px 0;
 }
 .nb-question .name {
     font-weight: bold;
     font-size: 22px;
-}
-.nb-question .group-id {
-    color: #555;
-    font-size: 16px;
-    margin-bottom: 20px;
 }
 .nb-question .nb-prompt {
     font-size: 18px;
@@ -340,6 +342,36 @@ _NB_CSS = _APKG_CSS + """\
     color: #333;
 }
 """
+
+
+def _erkennen_model(model_id: int, model_name: str) -> genanki.Model:
+    """Anki model for the erkennen card type (A erkennen).
+
+    Same fields as group model but text-only front (name + 'visualisiere!').
+    """
+    return genanki.Model(
+        model_id,
+        model_name,
+        fields=[
+            {"name": "Group_ID"},
+            {"name": "Name"},
+            {"name": "Hoechster_Gipfel"},
+            {"name": "Basemap"},
+            {"name": "BasemapRot"},
+            {"name": "FrontOverlay"},
+            {"name": "BackOverlay"},
+            {"name": "Partition"},
+            {"name": "Context"},
+        ],
+        templates=[
+            {
+                "name": "Erkennen",
+                "qfmt": _TMPL_ERKENNEN_FRONT,
+                "afmt": _TMPL_BACK,
+            },
+        ],
+        css=_NB_CSS,
+    )
 
 
 def _neighbor_model(model_id: int, model_name: str) -> genanki.Model:
@@ -684,11 +716,16 @@ def generate_apkg_combined(region_name: str, merge_key: str) -> None:
     parent_title = f"Gebirgsgruppen der {region_label}"
 
     base = f"peak_soaring_{merge_key}"
-    _MODEL_VER = 6
+    _MODEL_VER = 7
     group_model_id = int(hashlib.sha256(
         f"{base}_combined_model_v{_MODEL_VER}".encode()
     ).hexdigest()[:8], 16)
     group_model = _group_model(group_model_id, parent_title)
+
+    erkennen_model_id = int(hashlib.sha256(
+        f"{base}_erkennen_model_v{_MODEL_VER}".encode()
+    ).hexdigest()[:8], 16)
+    erk_model = _erkennen_model(erkennen_model_id, f"{parent_title} Erkennen")
 
     nb_model_id = int(hashlib.sha256(
         f"{base}_neighbor_model_v{_MODEL_VER}".encode()
@@ -720,6 +757,10 @@ def generate_apkg_combined(region_name: str, merge_key: str) -> None:
         if card_type == "neighbor":
             notes, skipped = _build_neighbor_notes(
                 d_sub, nb_model, d_sub.groups, layers, media_files,
+            )
+        elif card_type == "erkennen":
+            notes, skipped = _build_group_notes(
+                d_sub, erk_model, d_sub.groups, layers, media_files,
             )
         else:
             notes, skipped = _build_group_notes(

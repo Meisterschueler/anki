@@ -485,8 +485,8 @@ SUBDECK_MERGE: Dict[str, list] = {
         ("soiusa_sts", "B Details"),
     ],
     "ostalpen_ave84": [
-        ("ave84", "A Positionen"),
-        ("ave84", "B Nachbarn", "neighbor"),
+        ("ave84", "A erkennen", "erkennen"),
+        ("ave84", "B visualisieren (incl. Nachbarn)", "neighbor"),
     ],
 }
 

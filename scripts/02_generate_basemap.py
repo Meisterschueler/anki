@@ -1223,6 +1223,24 @@ def compute_neighbors(d: Deck) -> dict:
     return neighbors
 
 
+def _wrap_label(name: str) -> str:
+    """Insert newline in long group names at natural break points."""
+    if len(name) <= 25:
+        return name
+    if "(" in name:
+        return name.replace("(", "\n(")
+    if " und " in name:
+        return name.replace(" und ", "\nund ")
+    mid = len(name) // 2
+    best = -1
+    for i, ch in enumerate(name):
+        if ch == " " and (best < 0 or abs(i - mid) < abs(best - mid)):
+            best = i
+    if best > 0:
+        return name[:best] + "\n" + name[best + 1:]
+    return name
+
+
 def render_neighbor_overlay(ax, d: Deck, ref, neighbor_refs) -> None:
     """Draw the target group (red) + its neighbours (black) with name labels.
 
@@ -1250,7 +1268,7 @@ def render_neighbor_overlay(ax, d: Deck, ref, neighbor_refs) -> None:
                           facecolor="none", edgecolor="#000000",
                           linewidth=1.5, alpha=1.0, zorder=6)
         lp = _label_point(geom)
-        ax.text(lp.x, lp.y, f"{group.name}\n({group.group_id})",
+        ax.text(lp.x, lp.y, f"{_wrap_label(group.name)}\n({group.group_id})",
                 transform=ccrs.PlateCarree(),
                 fontsize=8, fontweight="bold",
                 color="black", ha="center", va="center", zorder=7,
