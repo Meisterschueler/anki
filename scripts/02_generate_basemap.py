@@ -1267,7 +1267,7 @@ def render_neighbor_overlay(ax, d: Deck, ref, neighbor_refs) -> None:
         ax.add_geometries([geom], crs=ccrs.PlateCarree(),
                           facecolor="none", edgecolor="#000000",
                           linewidth=1.5, alpha=1.0, zorder=6)
-        lp = _label_point(geom)
+        lp = geom.centroid
         ax.text(lp.x, lp.y, f"{_wrap_label(group.name)}\n({group.group_id})",
                 transform=ccrs.PlateCarree(),
                 fontsize=8, fontweight="bold",
