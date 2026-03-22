@@ -37,14 +37,13 @@ _SAVE_PARAMS = {
 }
 
 
-def save_figure(fig, output_path, overlay: bool = False, deck: Deck = None) -> None:
+def save_figure(fig, output_path, overlay: bool = False) -> None:
     """Save a matplotlib figure as WebP.
 
     Args:
         fig:         Matplotlib figure to save.
         output_path: Destination path (extension is forced to .webp).
         overlay:     True → transparent lossless WebP; False → opaque lossy WebP.
-        deck:        Unused; kept for API compatibility with older call sites.
     """
     import io
     from PIL import Image as _PILImage

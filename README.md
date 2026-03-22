@@ -26,7 +26,7 @@ SOIUSA-Decks werden pro Region zu einem kombinierten `.apkg` mit Subdecks zusamm
 | Ostalpen | POIs | 209 | Gipfel, Pässe, Orte, Täler, Seen aus "Peak Soaring" |
 | Westalpen | POIs | 209 | (gefiltert auf Region-Bbox) |
 
-POI-Kategorien: 78 Gipfel (▲), 59 Pässe (⬤), 22 Täler (◆), 43 Orte (■), 7 Seen (⬡).
+POI-Kategorien: 82 Gipfel (▲), 59 Pässe (⧫), 24 Täler (◆), 43 Orte (■), 7 Seen (⧡).
 
 Das Ostalpen-POI-Deck wird als Multi-Deck mit Subdecks gebaut:
 - **Sub-Regions** (gezoomte Karte + Thumbnail): `A Königsdorf`, `B Innsbruck`

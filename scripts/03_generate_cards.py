@@ -94,16 +94,103 @@ def generate_group_card(d: Deck, group, output_path) -> None:
 
 
 def generate_group_card_colored(d: Deck, group, output_path):
-    """Back card: transparent overlay with single polygon (+ parent if hierarchical)."""
+    """Back card: transparent overlay with single polygon (+ parent if hierarchical).
+
+    For the ``taler`` classification an additional semi-transparent layer
+    shows the intersecting AVE 84 Gebirgsgruppen so learners can see which
+    mountain groups each valley belongs to.
+    """
     fig, ax = create_figure(d)
     render_full_basemap(ax, d, cities=False, borders=False,
                         rivers=False, lakes=False,
                         svg_mode=False, overlay_mode=True)
     if d.classification.parent_osm_tag:
         render_parent_polygon(ax, d, group.osm_ref)
+
+    # For Täler: show intersecting AVE 84 groups behind the valley polygon
+    if d.classification.name == "taler":
+        _render_ave84_context(ax, d, group_osm_ref=group.osm_ref)
+
     render_single_polygon(ax, d, group.osm_ref)
     save_figure(fig, output_path, overlay=True)
     plt.close(fig)
+
+
+def _render_ave84_context(ax, d: Deck, group_osm_ref: str) -> None:
+    """Render the AVE 84 Gebirgsgruppen that intersect with a valley polygon.
+
+    Loads ``data/osm/ostalpen_ave84.geojson`` and highlights the groups
+    whose polygons overlap the valley identified by *group_osm_ref*.
+    Each group is rendered with its AVE 84 colour at reduced alpha so the
+    valley polygon on top remains clearly legible.
+
+    Does nothing (prints a warning) if the AVE 84 GeoJSON is missing.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+    try:
+        from shapely.geometry import shape as _shape
+    except ImportError:
+        print("[WARN] shapely not available — skipping AVE 84 context overlay")
+        return
+
+    import cartopy.crs as ccrs
+
+    # ── Load AVE 84 polygon data ──────────────────────────────────────────────
+    ave84_path = _Path(__file__).parent.parent / "data" / "osm" / "ostalpen_ave84.geojson"
+    taler_path = d.osm_geojson
+    if not ave84_path.exists():
+        print(f"[WARN] AVE 84 GeoJSON not found: {ave84_path} — skipping context")
+        return
+    if not taler_path.exists():
+        print(f"[WARN] Taler GeoJSON not found: {taler_path} — skipping context")
+        return
+
+    ave84_data = _json.loads(ave84_path.read_text(encoding="utf-8"))
+    taler_data = _json.loads(taler_path.read_text(encoding="utf-8"))
+
+    # Find the valley feature by osm_ref (matched via osm_tag="name")
+    valley_geom = None
+    for feat in taler_data["features"]:
+        if feat["properties"].get("name") == group_osm_ref:
+            valley_geom = _shape(feat["geometry"])
+            break
+    if valley_geom is None:
+        return  # Valley not yet downloaded, skip silently
+
+    # ── Import AVE 84 color mapping ───────────────────────────────────────────
+    import importlib as _il
+    try:
+        ave84_mod = _il.import_module("classifications.ave84")
+        ave84_colors = ave84_mod.CLASSIFICATION.colors
+        ave84_by_ref = {g.osm_ref: g for g in ave84_mod.CLASSIFICATION.groups}
+    except Exception:
+        print("[WARN] Could not load AVE 84 classification — skipping context")
+        return
+
+    crs = ccrs.PlateCarree()
+
+    # ── Render intersecting AVE 84 groups ─────────────────────────────────────
+    for feat in ave84_data["features"]:
+        ave_geom = _shape(feat["geometry"])
+        if not ave_geom.intersects(valley_geom):
+            continue
+
+        ave_ref = feat["properties"].get("ref:aveo", "")
+        group_obj = ave84_by_ref.get(ave_ref)
+        if group_obj is None:
+            continue
+        color_info = ave84_colors.get(group_obj.hauptgruppe, {})
+        fill_color = color_info.get("fill", "#888888")
+
+        # Render as a filled polygon with low alpha (context, not primary)
+        from cartopy.feature import ShapelyFeature
+        feat_obj = ShapelyFeature(
+            [ave_geom], crs,
+            facecolor=fill_color, edgecolor="#FFFFFF",
+            linewidth=0.4, alpha=0.30, zorder=4,
+        )
+        ax.add_feature(feat_obj)
 
 
 # ─── Title Box ────────────────────────────────────────────────────────────────

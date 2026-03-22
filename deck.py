@@ -17,6 +17,7 @@ Usage in scripts::
     d = get_deck(args.region, args.system)
 """
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -247,7 +248,7 @@ class POIClassification:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @dataclass
-class BaseDeck:
+class BaseDeck(ABC):
     """Common base for Region × Classification deck configurations.
 
     Provides shared filename generation, property delegation to the
@@ -268,10 +269,12 @@ class BaseDeck:
     # ── Abstract: override in subclasses ─────────────────────────────────
 
     @property
+    @abstractmethod
     def _classification_name(self) -> str:
         raise NotImplementedError
 
     @property
+    @abstractmethod
     def _classification_title(self) -> str:
         raise NotImplementedError
 
@@ -295,7 +298,7 @@ class BaseDeck:
     def prefix(self) -> str:
         return f"ps_{self.region.name}_{self._classification_name}"
 
-    def filename_partition(self, ext: str = ".png") -> str:
+    def filename_partition(self, ext: str = ".webp") -> str:
         """Generate filename for partition map (Einteilung)."""
         return f"{self.prefix}_partition{ext}"
 
@@ -342,17 +345,17 @@ class Deck(BaseDeck):
 
     # ── Filename generation ──────────────────────────────────────────────
 
-    def filename_group_front(self, group_id: str, ext: str = ".png") -> str:
+    def filename_group_front(self, group_id: str, ext: str = ".webp") -> str:
         """Generate filename for group front card (question mark)."""
         safe_id = group_id.replace("/", "_")
         return f"{self.prefix}_group_{safe_id}_front{ext}"
 
-    def filename_group_back(self, group_id: str, ext: str = ".png") -> str:
+    def filename_group_back(self, group_id: str, ext: str = ".webp") -> str:
         """Generate filename for group back card (polygon overlay)."""
         safe_id = group_id.replace("/", "_")
         return f"{self.prefix}_group_{safe_id}_back{ext}"
 
-    def filename_group_neighbors(self, group_id: str, ext: str = ".png") -> str:
+    def filename_group_neighbors(self, group_id: str, ext: str = ".webp") -> str:
         """Generate filename for neighbor overlay (B Nachbarn deck)."""
         safe_id = group_id.replace("/", "_")
         return f"{self.prefix}_group_{safe_id}_neighbors{ext}"
@@ -419,24 +422,24 @@ class POIDeck(BaseDeck):
 
     # ── POI-specific filenames ───────────────────────────────────────────
 
-    def filename_poi_back(self, poi_id: str, ext: str = ".png") -> str:
+    def filename_poi_back(self, poi_id: str, ext: str = ".webp") -> str:
         safe_id = poi_id.replace("/", "_")
         return f"{self.prefix}_poi_{safe_id}_back{ext}"
 
-    def filename_category_badge(self, category: str, ext: str = ".png") -> str:
+    def filename_category_badge(self, category: str, ext: str = ".webp") -> str:
         """Small badge icon for a POI category (shared by all POIs of that type)."""
         return f"{self.prefix}_badge_{category}{ext}"
 
-    def filename_category_highlight(self, category: str, ext: str = ".png") -> str:
+    def filename_category_highlight(self, category: str, ext: str = ".webp") -> str:
         """Shared highlight ring sprite for a POI category (all POIs same ring image)."""
         return f"{self.prefix}_highlight_{category}{ext}"
 
-    def filename_poi_highlight(self, poi_id: str, ext: str = ".png") -> str:
+    def filename_poi_highlight(self, poi_id: str, ext: str = ".webp") -> str:
         """Overlay with just the highlight circle (for 'Was ist das?' front)."""
         safe_id = poi_id.replace("/", "_")
         return f"{self.prefix}_poi_{safe_id}_highlight{ext}"
 
-    def filename_all_pois_overlay(self, ext: str = ".png") -> str:
+    def filename_all_pois_overlay(self, ext: str = ".webp") -> str:
         """Shared overlay showing all POI markers (used as back layer)."""
         return f"{self.prefix}_all_pois{ext}"
 
@@ -467,7 +470,8 @@ REGION_DEFAULTS: Dict[str, str] = {
 
 # Valid (region, system) pairs
 VALID_COMBINATIONS: Dict[str, List[str]] = {
-    "ostalpen":  ["ave84", "soiusa_sz", "soiusa_sts", "pois", "landewiesen"],
+    "ostalpen":  ["ave84", "soiusa_sz", "soiusa_sts", "pois", "landewiesen",
+                  "taler", "gipfel", "paesse", "seen", "einzugsgebiete"],
     "westalpen": ["soiusa_sz", "soiusa_sts", "pois", "landewiesen"],
 }
 
@@ -485,8 +489,13 @@ SUBDECK_MERGE: Dict[str, list] = {
         ("soiusa_sts", "B Details"),
     ],
     "ostalpen_ave84": [
-        ("ave84", "A erkennen", "erkennen"),
-        ("ave84", "B visualisieren (incl. Nachbarn)", "neighbor"),
+        ("ave84",            "B Gebirgsgruppen"),
+        ("einzugsgebiete",   "A Einzugsgebiete"),
+        ("gipfel",           "C Gipfel"),
+        ("taler",            "D Täler"),
+        ("paesse",           "E Pässe"),
+        ("seen",             "F Seen"),
+        ("ave84",            "G Gebirgsgruppen visualisieren", "neighbor"),
     ],
 }
 
@@ -628,6 +637,33 @@ POI_MULTI_DECK: Dict[str, dict] = {
 }
 
 
+# ── POI deck detector ────────────────────────────────────────────────────────────────────────-
+# Module-based systems (gipfel/paesse/seen) load their own POIClassification
+# from a dedicated classification file instead of combining all peak-soaring POIs.
+_POI_SYSTEMS = {"pois", "landewiesen", "gipfel", "paesse", "seen"}
+
+# Classification module path registry
+_CLASSIFICATION_REGISTRY = {
+    ("ostalpen",  "ave84"):      "classifications.ave84",
+    ("ostalpen",  "soiusa_sz"):  "classifications.ostalpen_soiusa_sz",
+    ("ostalpen",  "soiusa_sts"): "classifications.ostalpen_soiusa_sts",
+    ("westalpen", "soiusa_sz"):  "classifications.westalpen_soiusa_sz",
+    ("westalpen", "soiusa_sts"): "classifications.westalpen_soiusa_sts",
+    # New: Ostalpen Merkmale
+    ("ostalpen",  "taler"):      "classifications.ostalpen_taler",
+    ("ostalpen",  "einzugsgebiete"): "classifications.ostalpen_einzugsgebiete",
+}
+
+# Module-based POI classification registry (system → module path).
+# These POI systems load their classification from a dedicated module
+# instead of combining all POIs from peak_soaring_pois + landewiesen.
+_POI_CLASSIFICATION_MODULE_REGISTRY: Dict[str, str] = {
+    "gipfel":  "classifications.ostalpen_gipfel",
+    "paesse":  "classifications.ostalpen_paesse",
+    "seen":    "classifications.ostalpen_seen",
+}
+
+
 def _get_region(name: str) -> Region:
     """Import and return a Region by name."""
     _REGION_REGISTRY = {
@@ -645,15 +681,8 @@ def _get_region(name: str) -> Region:
     return mod.REGION
 
 
-def _get_classification(region_name: str, system_name: str) -> Classification:
+def _get_classification(region_name: str, system_name: str) -> Optional[Classification]:
     """Import and return a Classification by region + system name."""
-    _CLASSIFICATION_REGISTRY = {
-        ("ostalpen",  "ave84"):      "classifications.ave84",
-        ("ostalpen",  "soiusa_sz"):  "classifications.ostalpen_soiusa_sz",
-        ("ostalpen",  "soiusa_sts"): "classifications.ostalpen_soiusa_sts",
-        ("westalpen", "soiusa_sz"):  "classifications.westalpen_soiusa_sz",
-        ("westalpen", "soiusa_sts"): "classifications.westalpen_soiusa_sts",
-    }
     key = (region_name, system_name)
     if system_name in _POI_SYSTEMS:
         return None  # POI decks use _get_poi_classification instead
@@ -714,6 +743,18 @@ def _get_poi_classification(region_name: str, system_name: str) -> POIClassifica
 
     region = _get_region(region_name)
 
+    # ── Module-based POI systems (gipfel / paesse / seen) ────────────────────
+    if system_name in _POI_CLASSIFICATION_MODULE_REGISTRY:
+        module_path = _POI_CLASSIFICATION_MODULE_REGISTRY[system_name]
+        from importlib import import_module
+        mod = import_module(module_path)
+        cls = mod.CLASSIFICATION
+        if not cls.pois:
+            raise ValueError(
+                f"No POIs defined in {module_path} for system {system_name!r}."
+            )
+        return cls
+
     if system_name == "landewiesen":
         from classifications.landewiesen import landewiesen_for_region
         from classifications.landewiesen import CATEGORY_STYLE
@@ -736,10 +777,6 @@ def _get_poi_classification(region_name: str, system_name: str) -> POIClassifica
         pois=filtered,
         category_style=CATEGORY_STYLE,
     )
-
-
-# ── POI deck detector ────────────────────────────────────────────────────────
-_POI_SYSTEMS = {"pois", "landewiesen"}
 
 
 def _make_sub_region_region(parent_region: Region, sub: SubRegion) -> Region:
@@ -916,6 +953,7 @@ def _make_deck(region_name: str, system_name: str):
         )
 
     classification = _get_classification(region_name, system_name)
+    assert classification is not None  # guarded above by _POI_SYSTEMS check
     return Deck(
         region=region,
         classification=classification,
@@ -927,10 +965,10 @@ def _make_deck(region_name: str, system_name: str):
 
 
 # Lazy singletons — constructed on first access
-_decks: Dict[str, Deck] = {}
+_decks: Dict[str, BaseDeck] = {}
 
 
-def get_deck(region: str = "ostalpen", system: Optional[str] = None) -> Deck:
+def get_deck(region: str = "ostalpen", system: Optional[str] = None) -> BaseDeck:
     """Return a Deck instance by region + system (cached).
 
     If *system* is ``None``, uses the default for the region.

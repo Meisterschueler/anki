@@ -20,7 +20,7 @@ def _max_size_for(apkg_path):
 class TestDeckSize:
     """Anki .apkg file must not exceed the size limit."""
 
-    def test_deck_file_not_exceeds_50mb(self, apkg_path):
+    def test_deck_file_within_size_limit(self, apkg_path):
         if not apkg_path.exists():
             pytest.skip(f"Deck file not found: {apkg_path}")
 

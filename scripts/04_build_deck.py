@@ -26,12 +26,12 @@ import genanki
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))
 import deck as D
-from deck import Deck, POIDeck
+from deck import Deck, POIDeck, BaseDeck
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
-def _ensure_images(d: Deck) -> None:
+def _ensure_images(d: BaseDeck) -> None:
     """Auto-generate basemap + overlays if they don't exist yet."""
     from importlib import import_module
     if isinstance(d, POIDeck):
@@ -295,17 +295,11 @@ def _group_model(model_id: int, model_name: str) -> genanki.Model:
 
 # \u2500\u2500\u2500 Neighbor model \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500-
 
-_TMPL_ERKENNEN_FRONT = (
-    '<div class="nb-question">\n'
-    '<div class="name">{{Name}} ({{Group_ID}})</div>\n'
-    '<div class="nb-prompt">visualisiere!</div>\n'
-    '</div>\n'
-)
-
 _TMPL_NB_FRONT = (
     '<div class="nb-question">\n'
     '<div class="name">{{Name}} ({{Group_ID}})</div>\n'
-    '<div class="nb-prompt">Wie lauten die Nachbarn?</div>\n'
+    '<hr>\n'
+    '<div class="nb-prompt">visualisiere!</div>\n'
     '</div>\n'
 )
 
@@ -342,36 +336,6 @@ _NB_CSS = _APKG_CSS + """\
     color: #333;
 }
 """
-
-
-def _erkennen_model(model_id: int, model_name: str) -> genanki.Model:
-    """Anki model for the erkennen card type (A erkennen).
-
-    Same fields as group model but text-only front (name + 'visualisiere!').
-    """
-    return genanki.Model(
-        model_id,
-        model_name,
-        fields=[
-            {"name": "Group_ID"},
-            {"name": "Name"},
-            {"name": "Hoechster_Gipfel"},
-            {"name": "Basemap"},
-            {"name": "BasemapRot"},
-            {"name": "FrontOverlay"},
-            {"name": "BackOverlay"},
-            {"name": "Partition"},
-            {"name": "Context"},
-        ],
-        templates=[
-            {
-                "name": "Erkennen",
-                "qfmt": _TMPL_ERKENNEN_FRONT,
-                "afmt": _TMPL_BACK,
-            },
-        ],
-        css=_NB_CSS,
-    )
 
 
 def _neighbor_model(model_id: int, model_name: str) -> genanki.Model:
@@ -689,12 +653,116 @@ def generate_apkg(d: Deck) -> None:
 # COMBINED SUBDECK — merge multiple classification levels into one .apkg
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# ─── Merkmale POI note builder ────────────────────────────────────────────────
+
+def _build_merkmale_poi_notes(
+    d_poi: POIDeck,
+    model: genanki.Model,
+    pois: list,
+    primary_layers: dict,
+    media_files: list,
+) -> tuple:
+    """Build notes for Gipfel / Pässe / Seen sub-decks in the merged ave84 deck.
+
+    Uses the group card model (same fields/templates as A Gebirgsgruppen) so
+    all sub-decks share one consistent card layout.
+
+    The mapping of group-model fields to POI data:
+      Group_ID         → poi.poi_id
+      Name             → poi.name
+      Hoechster_Gipfel → elevation + category label  (e.g. "Gipfel · 3798 m")
+      FrontOverlay     → POI highlight ring (position from JSON sidecar)
+      BackOverlay      → AVE 84 Gebirgsgruppe overlay ({prefix}_poi_{id}_back.webp)
+      Partition        → primary (ave84) partition — "Einteilung" button
+      Context          → primary (ave84) context
+      Basemap/Rot      → primary (ave84) basemaps
+
+    Returns (notes, skipped).
+    """
+    notes = []
+    skipped = 0
+
+    for poi in pois:
+        highlight_file = d_poi.filename_poi_highlight(poi.poi_id, ".webp")
+        highlight_json = d_poi.output_images_dir / d_poi.filename_poi_highlight(
+            poi.poi_id, ".json"
+        )
+
+        if not highlight_json.exists():
+            skipped += 1
+            print(f"[APKG-MERKMALE] WARN: Missing highlight JSON "
+                  f"for {poi.poi_id} ({poi.name})")
+            continue
+
+        # Front: positioned highlight ring (shared category sprite or per-POI png)
+        front_html = _poi_overlay_html(d_poi.output_images_dir, highlight_file)
+
+        # Media for highlight sprite (shared per category if used)
+        hl_sprite_path = d_poi.output_images_dir / d_poi.filename_category_highlight(
+            poi.category, ".webp"
+        )
+        if hl_sprite_path.exists() and str(hl_sprite_path) not in media_files:
+            media_files.append(str(hl_sprite_path))
+
+        per_poi_hl = d_poi.output_images_dir / highlight_file
+        if per_poi_hl.exists() and str(per_poi_hl) not in media_files:
+            media_files.append(str(per_poi_hl))
+
+        # Back: AVE 84 group overlay generated by generate_ave84_poi_back_overlay
+        back_file = d_poi.filename_poi_back(poi.poi_id, ".webp")
+        back_path = d_poi.output_images_dir / back_file
+        if back_path.exists():
+            if str(back_path) not in media_files:
+                media_files.append(str(back_path))
+            back_html = f'<img class="overlay" src="{back_file}">'
+        else:
+            # Graceful fallback: show highlight ring only
+            back_html = front_html
+            print(f"[APKG-MERKMALE] WARN: Missing AVE84 back overlay "
+                  f"for {poi.poi_id} — using front highlight as fallback")
+
+        # Build info string: category label + elevation
+        cat_label = (d_poi.category_style
+                     .get(poi.category, {})
+                     .get("label", poi.category.capitalize()))
+        info = cat_label
+        if poi.elevation is not None:
+            info = f"{cat_label} · {poi.elevation:,} m".replace(",", ".")
+        if poi.subtitle:
+            info = f"{info}  |  {poi.subtitle}"
+
+        note = genanki.Note(
+            model=model,
+            fields=[
+                poi.poi_id,
+                poi.name,
+                info,
+                primary_layers["basemap_html"],
+                primary_layers["basemap_rot_html"],
+                front_html,
+                back_html,
+                primary_layers["partition_html"],
+                primary_layers["context_html"],
+            ],
+            tags=[poi.category, d_poi.poi_classification.name],
+        )
+        notes.append(note)
+
+    return notes, skipped
+
+
 def generate_apkg_combined(region_name: str, merge_key: str) -> None:
     """Build a single .apkg containing multiple subdecks.
 
     Uses the SUBDECK_MERGE config from deck.py to determine which systems
     to merge and what to name each subdeck.  Media is deduplicated: the
     basemap from the first subdeck is shared across all subdecks.
+
+    Supports heterogeneous sub-decks: both Classification polygon decks
+    (ave84, taler) and POI decks (gipfel, paesse, seen) can be combined
+    into a single .apkg.  POI sub-decks use the group card model so all
+    subdecks share one card layout, with the primary deck's basemap /
+    partition / context reused to avoid duplicate files.
     """
     merge_entries = D.SUBDECK_MERGE[merge_key]
     # Normalise to 3-tuples: (system, label, card_type)
@@ -716,16 +784,11 @@ def generate_apkg_combined(region_name: str, merge_key: str) -> None:
     parent_title = f"Gebirgsgruppen der {region_label}"
 
     base = f"peak_soaring_{merge_key}"
-    _MODEL_VER = 7
+    _MODEL_VER = 8   # bump when fields/templates change
     group_model_id = int(hashlib.sha256(
         f"{base}_combined_model_v{_MODEL_VER}".encode()
     ).hexdigest()[:8], 16)
     group_model = _group_model(group_model_id, parent_title)
-
-    erkennen_model_id = int(hashlib.sha256(
-        f"{base}_erkennen_model_v{_MODEL_VER}".encode()
-    ).hexdigest()[:8], 16)
-    erk_model = _erkennen_model(erkennen_model_id, f"{parent_title} Erkennen")
 
     nb_model_id = int(hashlib.sha256(
         f"{base}_neighbor_model_v{_MODEL_VER}".encode()
@@ -733,9 +796,26 @@ def generate_apkg_combined(region_name: str, merge_key: str) -> None:
     nb_model = _neighbor_model(nb_model_id, f"{parent_title} Nachbarn")
 
     media_files: list[str] = []
+    media_set: set[str] = set()   # for deduplication
     anki_subdecks: list = []
     total_skipped = 0
     layers_cache: dict[str, dict] = {}   # keyed by d.name
+
+    def _add_media(path_str: str):
+        if path_str not in media_set:
+            media_set.add(path_str)
+            media_files.append(path_str)
+
+    # ── Collect primary deck layers (basemap/partition/context) once ───────
+    # These layers are shared across ALL subdecks including the POI ones so
+    # the "Einteilung" button always shows the AVE 84 partition.
+    assert isinstance(d_primary, Deck), "Primary subdeck must be a Classification deck"
+    primary_group_layers = _collect_group_layers(d_primary, media_files)
+    if primary_group_layers is None:
+        return
+    for p in media_files:
+        media_set.add(p)
+    layers_cache[d_primary.name] = primary_group_layers
 
     # ── Build each subdeck ───────────────────────────────────────────────
     for d_sub, label, card_type in sub_decks_cfg:
@@ -746,21 +826,35 @@ def generate_apkg_combined(region_name: str, merge_key: str) -> None:
 
         anki_deck = genanki.Deck(subdeck_id, subdeck_title)
 
+        # ── POI subdecks (gipfel / paesse / seen) ─────────────────────────
+        if isinstance(d_sub, POIDeck):
+            notes, skipped = _build_merkmale_poi_notes(
+                d_sub, group_model, d_sub.pois,
+                primary_group_layers, media_files,
+            )
+            for n in notes:
+                anki_deck.add_note(n)
+            total_skipped += skipped
+            print(f"[APKG]   {label}: {len(anki_deck.notes)} notes (POI)")
+            anki_subdecks.append(anki_deck)
+            continue
+
+        # ── Classification (polygon) subdecks ─────────────────────────────
+        # After the isinstance(POIDeck) + continue above, d_sub is a Deck here.
+        assert isinstance(d_sub, Deck)
         if d_sub.name in layers_cache:
             layers = layers_cache[d_sub.name]
         else:
             layers = _collect_group_layers(d_sub, media_files)
             if layers is None:
                 return
+            for p in media_files:
+                media_set.add(p)
             layers_cache[d_sub.name] = layers
 
         if card_type == "neighbor":
             notes, skipped = _build_neighbor_notes(
                 d_sub, nb_model, d_sub.groups, layers, media_files,
-            )
-        elif card_type == "erkennen":
-            notes, skipped = _build_group_notes(
-                d_sub, erk_model, d_sub.groups, layers, media_files,
             )
         else:
             notes, skipped = _build_group_notes(
@@ -774,7 +868,7 @@ def generate_apkg_combined(region_name: str, merge_key: str) -> None:
         anki_subdecks.append(anki_deck)
 
     if total_skipped:
-        print(f"[APKG] WARNING: {total_skipped} groups skipped (missing overlays).")
+        print(f"[APKG] WARNING: {total_skipped} notes skipped (missing overlays).")
 
     _write_apkg(
         d_primary.output_csv_dir / f"{d_primary.anki_csv_name}.apkg",

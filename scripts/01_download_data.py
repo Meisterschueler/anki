@@ -140,27 +140,34 @@ def download_polygons(d: Deck):
 
 def _osm_json_to_geojson(osm_data, osm_tag="ref:aveo"):
     elements = osm_data["elements"]
-    nodes, ways, relations = {}, {}, []
+    nodes = {}
+    way_nodes: dict = {}   # way_id -> [node_ids]
+    way_tags: dict = {}    # way_id -> tags (only for ways that carry their own tags)
+    relations = []
     for el in elements:
         if el["type"] == "node":
             nodes[el["id"]] = (el["lon"], el["lat"])
         elif el["type"] == "way":
-            ways[el["id"]] = el.get("nodes", [])
+            way_nodes[el["id"]] = el.get("nodes", [])
+            if el.get("tags"):
+                way_tags[el["id"]] = el["tags"]
         elif el["type"] == "relation":
             relations.append(el)
 
     features = []
+
+    # --- relations -----------------------------------------------------------
     for rel in relations:
         tags = rel.get("tags", {})
         if osm_tag not in tags:
             continue
         outer_ways, inner_ways = [], []
         for m in rel.get("members", []):
-            if m["type"] == "way" and m["ref"] in ways:
+            if m["type"] == "way" and m["ref"] in way_nodes:
                 (inner_ways if m.get("role") == "inner" else outer_ways).append(m["ref"])
 
-        outer_rings = _assemble_rings(outer_ways, ways, nodes)
-        inner_rings = _assemble_rings(inner_ways, ways, nodes)
+        outer_rings = _assemble_rings(outer_ways, way_nodes, nodes)
+        inner_rings = _assemble_rings(inner_ways, way_nodes, nodes)
         if not outer_rings:
             print(f"  [OSM] Could not build polygon for {osm_tag}={tags.get(osm_tag)}")
             continue
@@ -175,23 +182,51 @@ def _osm_json_to_geojson(osm_data, osm_tag="ref:aveo"):
 
         features.append({"type": "Feature", "properties": tags,
                          "geometry": geometry, "id": rel["id"]})
+
+    # --- standalone closed ways (e.g. areas tagged natural=valley) -----------
+    seen_tags = {f["properties"].get(osm_tag) for f in features}  # avoid dup
+    for wid, tags in way_tags.items():
+        if osm_tag not in tags:
+            continue
+        if tags[osm_tag] in seen_tags:
+            continue  # already found via a relation
+        node_ids = way_nodes.get(wid, [])
+        if len(node_ids) < 4:
+            continue
+        coords = [nodes[n] for n in node_ids if n in nodes]
+        if len(coords) < 4:
+            continue
+        if coords[0] != coords[-1]:  # close the ring if needed
+            coords = coords + [coords[0]]
+        features.append({"type": "Feature", "properties": tags,
+                         "geometry": {"type": "Polygon", "coordinates": [coords]},
+                         "id": wid})
+        seen_tags.add(tags[osm_tag])
+
     return {"type": "FeatureCollection", "features": features}
 
 
 def _osm_json_to_geojson_by_id(osm_data, relid_to_ref, osm_tag="ref:aveo"):
-    """Convert OSM JSON to GeoJSON features, assigning the OSM tag from a
-    relation-ID → ref mapping (for groups that lack the tag)."""
+    """Convert OSM JSON to GeoJSON features, assigning the OSM tag from an
+    ID → ref mapping.  Handles both *relation* and *way* elements so that
+    ``osm_fallback_ids`` can contain either kind of OSM ID."""
     elements = osm_data["elements"]
-    nodes, ways, relations = {}, {}, []
+    nodes: dict = {}
+    way_nodes: dict = {}   # way_id -> [node_ids]
+    way_els: dict = {}     # way_id -> full element dict (for standalone ways)
+    relations = []
     for el in elements:
         if el["type"] == "node":
             nodes[el["id"]] = (el["lon"], el["lat"])
         elif el["type"] == "way":
-            ways[el["id"]] = el.get("nodes", [])
+            way_nodes[el["id"]] = el.get("nodes", [])
+            way_els[el["id"]] = el
         elif el["type"] == "relation":
             relations.append(el)
 
     features = []
+
+    # --- relations -----------------------------------------------------------
     for rel in relations:
         rid = rel["id"]
         ref = relid_to_ref.get(rid)
@@ -202,11 +237,11 @@ def _osm_json_to_geojson_by_id(osm_data, relid_to_ref, osm_tag="ref:aveo"):
 
         outer_ways, inner_ways = [], []
         for m in rel.get("members", []):
-            if m["type"] == "way" and m["ref"] in ways:
+            if m["type"] == "way" and m["ref"] in way_nodes:
                 (inner_ways if m.get("role") == "inner" else outer_ways).append(m["ref"])
 
-        outer_rings = _assemble_rings(outer_ways, ways, nodes)
-        inner_rings = _assemble_rings(inner_ways, ways, nodes)
+        outer_rings = _assemble_rings(outer_ways, way_nodes, nodes)
+        inner_rings = _assemble_rings(inner_ways, way_nodes, nodes)
         if not outer_rings:
             print(f"  [OSM] Could not build polygon for {ref} (relation {rid})")
             continue
@@ -222,6 +257,28 @@ def _osm_json_to_geojson_by_id(osm_data, relid_to_ref, osm_tag="ref:aveo"):
         features.append({"type": "Feature", "properties": tags,
                          "geometry": geometry, "id": rid})
         print(f"  [OSM] Built polygon for ref {ref}: {tags.get('name', tags.get('name:de', '?'))}")
+
+    # --- standalone ways (fallback IDs that point to a way) ------------------
+    found_refs = {f["properties"][osm_tag] for f in features}
+    for wid, el in way_els.items():
+        ref = relid_to_ref.get(wid)
+        if ref is None or ref in found_refs:
+            continue
+        node_ids = way_nodes.get(wid, [])
+        coords = [nodes[n] for n in node_ids if n in nodes]
+        if len(coords) < 4:
+            print(f"  [OSM] Not enough nodes for polygon for {ref} (way {wid})")
+            continue
+        if coords[0] != coords[-1]:
+            coords = coords + [coords[0]]
+        tags = dict(el.get("tags", {}))
+        tags[osm_tag] = ref
+        features.append({"type": "Feature", "properties": tags,
+                         "geometry": {"type": "Polygon", "coordinates": [coords]},
+                         "id": wid})
+        found_refs.add(ref)
+        print(f"  [OSM] Built polygon for ref {ref}: {tags.get('name', '?')} (way {wid})")
+
     return features
 
 
@@ -733,6 +790,95 @@ def _download_file(url, filepath, chunk_size=8192):
 # MAIN
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def download_taler_polygons(d: Deck):
+    """Download valley polygon relations from OSM for the ``taler`` system.
+
+    Unlike other systems that query by a single reference tag (e.g.
+    ``ref:aveo``), valleys have no standard tag. This function:
+
+    1. Queries Overpass for *named* ``relation["natural"="valley"]`` in the
+       region bbox to catch as many matches as possible via the OSM tag.
+    2. Processes these relations as polygon GeoJSON using the valley's
+       ``name`` property as the lookup key (``osm_tag="name"``).
+    3. Fills any still-missing valleys from ``d.osm_fallback_ids`` using
+       the standard fallback-by-relation-ID mechanism.
+    """
+    if d.osm_geojson.exists():
+        print(f"[OSM-TALER] Already exists: {d.osm_geojson}")
+        return
+
+    print(f"[OSM-TALER] Downloading valley polygons for {d.title} …")
+
+    # Query each target valley by exact name (much faster than a bbox scan
+    # which times out on the large Ostalpen bounding box).
+    name_filters = "".join(
+        f'  relation["natural"="valley"]["name"="{n.replace(chr(34), chr(92)+chr(34))}"];\n'
+        for n in sorted(d.valid_osm_refs)
+    )
+    query = (
+        f"[out:json][timeout:{D.OVERPASS_TIMEOUT}];\n"
+        f"(\n{name_filters});\n"
+        f"out body;\n>;\nout skel qt;\n"
+    )
+
+    osm_data = _overpass_query(query, label="OSM-TALER")
+    print(f"[OSM-TALER] Received {len(osm_data['elements'])} elements")
+
+    # Convert to GeoJSON using valley name as the tag value
+    geojson = _osm_json_to_geojson(osm_data, osm_tag="name")
+
+    # Keep only the valleys defined in the deck (matched by name)
+    valid = d.valid_osm_refs
+    kept, skipped = [], []
+    for feat in geojson["features"]:
+        name = feat["properties"].get("name", "")
+        if name in valid:
+            kept.append(feat)
+        else:
+            skipped.append(name)
+
+    found_refs = {f["properties"]["name"] for f in kept}
+    print(f"[OSM-TALER] Found {len(kept)} valleys via natural=valley query")
+
+    # Fallback: fetch remaining valleys by OSM relation ID
+    missing_refs = valid - found_refs
+    fallback = d.osm_fallback_ids
+    fetchable = {ref: fallback[ref] for ref in missing_refs if ref in fallback}
+
+    if fetchable:
+        print(f"[OSM-TALER] Fetching {len(fetchable)} valleys by ID …")
+        fb_ids = list(fetchable.values())
+        # Try each ID as both a relation and a way — only one will match per ID
+        id_union = "".join(
+            f"  relation({rid});\n  way({rid});\n" for rid in fb_ids
+        )
+        fb_query = (
+            f"[out:json][timeout:{D.OVERPASS_TIMEOUT}];\n"
+            f"(\n{id_union});\n"
+            f"out body;\n>;\nout skel qt;\n"
+        )
+
+        fb_data = _overpass_query(fb_query, label="OSM-TALER-FB")
+        relid_to_ref = {rid: ref for ref, rid in fetchable.items()}
+        fb_feats = _osm_json_to_geojson_by_id(fb_data, relid_to_ref, osm_tag="name")
+        kept.extend(fb_feats)
+        found_refs.update(f["properties"]["name"] for f in fb_feats)
+        print(f"[OSM-TALER] Added {len(fb_feats)} fallback valleys")
+
+    geojson["features"] = kept
+    print(f"[OSM-TALER] Total: {len(kept)} valleys (expected {len(d.groups)})")
+
+    still_missing = valid - found_refs
+    if still_missing:
+        print(f"[OSM-TALER] WARNING — still missing: {sorted(still_missing)}")
+        print("[OSM-TALER] Update osm_fallback_ids in classifications/ostalpen_taler.py")
+
+    d.osm_geojson.parent.mkdir(parents=True, exist_ok=True)
+    with open(d.osm_geojson, "w", encoding="utf-8") as f:
+        json.dump(geojson, f, ensure_ascii=False, indent=2)
+    print(f"[OSM-TALER] Saved → {d.osm_geojson}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Download geodata for Anki deck")
     D.add_deck_arguments(parser)
@@ -744,13 +890,19 @@ def main():
     print(f"=== Downloading data for: {d.title} ===\n")
 
     if not args.skip_osm:
-        if d.classification.name in ("soiusa_sz", "soiusa_sts") and not d.osm_geojson.exists():
-            print(f"[OSM] {d.title} polygons are not from OSM.")
-            print(f"[OSM] Run: python scripts/download_soiusa_arpa.py "
-                  f"--level {'SZ' if d.classification.name == 'soiusa_sz' else 'STS'} "
-                  f"--region {args.region}")
-        else:
-            download_polygons(d)
+        # POI-only systems (gipfel, paesse, seen) have no polygon GeoJSON to download
+        is_poi = isinstance(d, D.POIDeck)
+        if not is_poi:
+            cls_name = d.classification.name
+            if cls_name in ("soiusa_sz", "soiusa_sts") and not d.osm_geojson.exists():
+                print(f"[OSM] {d.title} polygons are not from OSM.")
+                print(f"[OSM] Run: python scripts/download_soiusa_arpa.py "
+                      f"--level {'SZ' if cls_name == 'soiusa_sz' else 'STS'} "
+                      f"--region {args.region}")
+            elif cls_name == "taler":
+                download_taler_polygons(d)
+            else:
+                download_polygons(d)
         download_osm_rivers(d)
         download_osm_lakes(d)
         download_osm_valleys(d)

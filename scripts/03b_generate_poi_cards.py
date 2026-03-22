@@ -877,6 +877,82 @@ def generate_poi_back_overlay(d: POIDeck, poi: POI, output_path) -> None:
     plt.close(fig)
 
 
+# ─── AVE 84 context back overlay (for Gipfel / Pässe / Seen sub-decks) ───────
+
+def generate_ave84_poi_back_overlay(d: POIDeck, poi: POI, output_path) -> None:
+    """Overlay: the AVE 84 Gebirgsgruppe(n) that contain/touch the POI.
+
+    Used as the ``BackOverlay`` for the merged Gipfel / Pässe / Seen
+    sub-decks so learners can see which mountain group the POI belongs to.
+
+    The containing group is filled with its AVE 84 colour at full alpha;
+    adjacent groups that the POI lies on the boundary of are shown at
+    lower alpha.  The highlight ring is also rendered so the POI location
+    is visible.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+    try:
+        from shapely.geometry import Point as _Point, shape as _shape
+    except ImportError:
+        print("[WARN] shapely not available — falling back to plain highlight overlay")
+        generate_poi_back_overlay(d, poi, output_path)
+        return
+
+    import importlib as _il
+    import cartopy.crs as ccrs
+
+    ave84_path = _Path(__file__).parent.parent / "data" / "osm" / "ostalpen_ave84.geojson"
+    if not ave84_path.exists():
+        print(f"[WARN] AVE 84 GeoJSON not found: {ave84_path} — falling back")
+        generate_poi_back_overlay(d, poi, output_path)
+        return
+
+    ave84_data = _json.loads(ave84_path.read_text(encoding="utf-8"))
+
+    try:
+        ave84_mod = _il.import_module("classifications.ave84")
+        ave84_colors = ave84_mod.CLASSIFICATION.colors
+        ave84_by_ref = {g.osm_ref: g for g in ave84_mod.CLASSIFICATION.groups}
+    except Exception as e:
+        print(f"[WARN] Could not load AVE 84 classification ({e}) — falling back")
+        generate_poi_back_overlay(d, poi, output_path)
+        return
+
+    poi_point = _Point(poi.lon, poi.lat)
+    crs = ccrs.PlateCarree()
+
+    fig, ax = create_figure(d)
+    ax.set_facecolor("none")
+    ax.patch.set_alpha(0.0)
+
+    from cartopy.feature import ShapelyFeature
+
+    for feat in ave84_data["features"]:
+        geom = _shape(feat["geometry"])
+        if not geom.intersects(poi_point.buffer(0.05)):  # ~5 km tolerance
+            continue
+        ave_ref = feat["properties"].get("ref:aveo", "")
+        group_obj = ave84_by_ref.get(ave_ref)
+        if group_obj is None:
+            continue
+        color_info = ave84_colors.get(group_obj.hauptgruppe, {})
+        fill_color = color_info.get("fill", "#888888")
+        alpha = 0.75 if geom.contains(poi_point) else 0.35
+        feat_obj = ShapelyFeature(
+            [geom], crs,
+            facecolor=fill_color, edgecolor="#FFFFFF",
+            linewidth=0.6, alpha=alpha, zorder=4,
+        )
+        ax.add_feature(feat_obj)
+
+    # Add the highlight ring so the POI location is visible on the back
+    render_poi_highlight(ax, poi, d)
+
+    save_figure(fig, output_path, overlay=True)
+    plt.close(fig)
+
+
 def _clear_overlay_axes(ax) -> None:
     """Remove all drawn artists from a transparent overlay axes.
 
@@ -1005,6 +1081,21 @@ def generate_all(d: POIDeck, pois=None, force=False):
                 )
             else:
                 print(f"  [{count}/{total}] Skip (exists): {hl_json_path.name}")
+
+    # ── AVE 84 back overlays for Merkmale sub-decks ───────────────────────────
+    # Systems gipfel / paesse / seen generate a per-POI "poi_back.webp" that
+    # shows the containing AVE 84 Gebirgsgruppe so that the merged ave84 deck
+    # can display it as the BackOverlay on the card back.
+    _MERKMALE_SYSTEMS = {"gipfel", "paesse", "seen"}
+    if d.poi_classification.name in _MERKMALE_SYSTEMS:
+        print(f"\n[POI-CARDS] Generating AVE 84 back overlays for {d.poi_classification.name} …")
+        for poi in pois:
+            back_path = d.output_images_dir / d.filename_poi_back(poi.poi_id, ".webp")
+            if force or not back_path.exists():
+                print(f"  AVE84 back: {poi.name}")
+                generate_ave84_poi_back_overlay(d, poi, back_path)
+            else:
+                print(f"  AVE84 back: Skip (exists): {back_path.name}")
 
     print(f"\n[POI-CARDS] Done. {total} overlay files in {d.output_images_dir}")
 

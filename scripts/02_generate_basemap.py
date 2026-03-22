@@ -1132,6 +1132,17 @@ def render_question_mark(ax, d: Deck, ref) -> None:
             continue
 
         geom = row.geometry
+        # Repair any topology issues (self-intersections in OSM data)
+        if not geom.is_valid:
+            import shapely
+            geom = shapely.make_valid(geom)
+            if geom.geom_type == "GeometryCollection":
+                # make_valid may return a collection; keep only polygon parts
+                polys = [g for g in geom.geoms
+                         if g.geom_type in ("Polygon", "MultiPolygon")]
+                if polys:
+                    from shapely.ops import unary_union
+                    geom = unary_union(polys)
 
         # ── Greedy circle packing ──────────────────────────────────────
         circles = []            # list of (x, y, radius)
